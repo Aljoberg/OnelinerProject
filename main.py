@@ -1157,14 +1157,16 @@ class sans:
             exc_in_exit_variable_2 = generate_variable_name()
             self_variable = generate_variable_name()
             exc_1_variable = generate_variable_name()
+            orelse_iter_variable = generate_variable_name()
+            finally_iter_variable = generate_variable_name()
             handler_global_vars = []
 
             try_except_func = f"""\
 ({exc_variable} := [], {try_variable} := ({try_body}), \
 ({', '.join(f'{(lambda var: handler_global_vars.append(var) or var)(generate_variable_name())} := \
 ({body} for {exc_var} in {exc_variable})' for _, exc_var, body in handlers)}), \
-{orelse_body and f'{else_variable} := {orelse_body}, '}\
-{finalbody and f'{finally_variable} := {finalbody}, '}\
+{orelse_body and f'{else_variable} := ({orelse_body} for {orelse_iter_variable} in [0]), '}\
+{finalbody and f'{finally_variable} := ({finalbody} for {finally_iter_variable} in [0]), '}\
 type("__TryExcept", (__import__("contextlib").ContextDecorator,), {{\
 "__enter__": lambda {self_variable}: {self_variable}, \
 "__exit__": lambda {self_variable}, {exc_in_exit_variable_0}, {exc_in_exit_variable_used}, {exc_in_exit_variable_2}: {exc_in_exit_variable_used} and ({exc_variable}.append({exc_1_variable} := {exc_in_exit_variable_used}) \
