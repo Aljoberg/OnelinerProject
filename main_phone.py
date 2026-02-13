@@ -3,7 +3,7 @@ import ast, builtins, string, itertools, keyword
 sln = ", "
 
 # TODO make error messages (in the future) also have line num and col
-
+# TODO make prepend a function like in laptop folder
 
 class LambdaManager:
 
@@ -22,7 +22,7 @@ class LambdaManager:
         self.lambdas[func_name] = (
             func_name  # resolve_variable(func_name, scopes, current_function)
         )
-        return prepend(f"({func_name} := {lambda_exp})")
+        return prepend + f"({func_name} := {lambda_exp})"
         # return f"({variables_dict_name}.update({{{repr(func_name)}: {lambda_exp}}}))"
 
     def get_lambda(self, func_name):
@@ -138,23 +138,18 @@ def import_from_node_to_code(node: ast.ImportFrom):
     lines = []
     module = node.module or ""
     level = node.level
-    # import_cached_varname = None if len(node.names) == 1 else generate_variable_name()
-    import_cached_varname = generate_variable_name() # TODO not needed if only one module
+    import_cached_varname = None if len(node.names) == 1 else generate_variable_name()
     import_string = f"{f'({import_cached_varname} := ' if import_cached_varname else ''}__import__({module!r}, globals(), locals(), [{', '.join(repr(i.asname if i.asname else i.name) for i in node.names)}], {level}){')' if import_cached_varname else ''}"
     import_var = import_cached_varname or import_string
     for alias in node.names:
         if alias.name == "*":
-            k = generate_variable_name()
-            # lines.append(
-            #     f"exec('from {module} import *')"
-            # )  # Using exec for wildcard import
-            # fucking ni treba tega jebenega sranja
-            # still cool tho
-            lines.append(f"globals().update({{{k}: getattr({import_cached_varname}, {k}) for {k} in getattr({import_cached_varname}, '__all__', 0) or (i for i in dir({import_cached_varname}) if not i.startswith('__'))}})")
-            # lines.append(f"({frame_var} := __import__('inspect').stack()[0][0], {frame_var}.f_locals.update({{{k}: getattr({import_cached_varname}, {k}) for {k} in getattr({import_cached_varname}, '__all__', 0) or (i for i in dir({import_cached_varname}) if not i.startswith('__'))}}), ({ctypes_var} := __import__('ctypes')).pythonapi.PyFrame_LocalsToFast({ctypes_var}.py_object({frame_var}), {ctypes_var}.c_int(0)))")
-            # if current_function is not None: # TODO move to function def
-            #     code_var = generate_variable_name()
-            #     lines.append(f"setattr({current_function}, '__code__', ({code_var} := {current_function}.__code__).replace(co_flags={code_var}.co_flags & 0xFFFE))")
+            # frame_var = generate_variable_name()
+            # k = generate_variable_name()
+            # ctypes_var = generate_variable_name()
+            lines.append(
+                f"exec('from {module} import *')"
+            )  # Using exec for wildcard import
+            # lines.append(f"({frame_var} := inspect.stack()[0][0], {frame_var}.f_locals.update({{{k}: getattr({module}, {k}) for {k} in {module}.__all__}}), ({ctypes_var} := __import__('ctypes')).pythonapi.PyFrame_LocalsToFast({ctypes_var}.py_object({frame_var}), {ctypes_var}.c_int(0)))")
             # TODO PyFrame_LocalsToFast for inspect.stack()[0][0] & remove CO_OPTIMIZED if in a scope
             # if in a global namespace, frame.f_locals is writeable & no need to call PyFrame_LocalsToFast (afaik, not sure for python 3.13)
         elif alias.asname:
@@ -182,6 +177,10 @@ def transform_assignment(
 
     # for i in node.targets: add_targets(i)
     if isinstance(node, ast.AnnAssign):
+        # XXX https://github.com/python/cpython/blob/main/Python/symtable.c#L2757
+        # annotations in local scopes are not executed and should not affect the symtable.
+        # conditional annotations are a thing
+        # __annotate__ is a thing in 3.14, shouldn't be a problem for now as it is in beta
         # TODO: implement __annotations__
         target = node.target
         value = node.value
@@ -236,20 +235,18 @@ class sans:
                 None,
                 None,
             ]
-
         # if not scopes:
         #     scopes = [varname]
-        def prepend(contents: str):
-            valooe = f"{(current_loop_and_function[0] or {}).get('return_hit_var')} or "  # <3.12 moment
-            # valooe_loop = f"not {current_loop_and_function[1]} and not {current_loop_and_function[2]} and "
-            valooe_loop = f"any(({current_loop_and_function[1]}, {current_loop_and_function[2]})) or "
-            # input()
-            return f'({valooe if current_loop_and_function[0]["has_return"] else ""}{valooe_loop if current_loop_and_function[1] else ""}{contents})'
-
+        valooe = f"{(current_loop_and_function[0] or {}).get('return_hit_var')} or "  # <3.12 moment
+        # valooe_loop = f"not {current_loop_and_function[1]} and not {current_loop_and_function[2]} and "
+        valooe_loop = (
+            f"any(({current_loop_and_function[1]}, {current_loop_and_function[2]})) or "
+        )
+        print(current_loop_and_function)
+        # input()
+        prepend = f'{valooe if current_loop_and_function[0]["has_return"] else ""}{valooe_loop if current_loop_and_function[1] else ""}'
         if isinstance(node, ast.Expr):
-            return prepend(
-                f'{sans.transform_node(node.value, current_loop_and_function, f"{varname}", scopes, exc_name, loop_vars)}'
-            )
+            return f'{prepend}{sans.transform_node(node.value, current_loop_and_function, f"{varname}", scopes, exc_name, loop_vars)}'
         elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             global_vars[node.name] = []
             nonlocal_vars[node.name] = []
@@ -368,23 +365,14 @@ class sans:
                 )
                 + vkwargs
             )
-
-            # TODO clean all of this fucking weird code up
-            is_async = isinstance(node, ast.AsyncFunctionDef)
-            if is_async:
-                code_var = generate_variable_name()
-                toggle_async = f"setattr({node.name}, '__code__', ({code_var} := {node.name}.__code__).replace(co_flags={code_var}.co_flags ^ 32 | 128))"
-                # FIXME move below the declaration, or else it won't be declared yet
-
-            func_expression = f"{'(' if is_async else ''}lambda{(' ' + init_args) if init_args else ''}: {f'({return_store_var} := [None]) and ({return_hit_var} := False) or ' if has_return else ''}[{body}{f', {return_store_var}[0]' if has_return else ', None'}][-1]{f', {toggle_async})' if is_async else ''}"
+            func_expression = f"lambda{(' ' + init_args) if init_args else ''}: {f'({return_store_var} := [None]) and ({return_hit_var} := False) or ' if has_return else ''}[{body}{f', {return_store_var}[0]' if has_return else ', None'}][-1]"
             for i in node.decorator_list:
                 func_expression = (
                     f"({sans.transform_node(i, current_loop_and_function, varname, scopes, exc_name, loop_vars)})("
                     + func_expression
                     + ")"
-                    # + f" and {node.name}.__code__"  # TODO <- idk what i meant here but look it up
+                    + f" and {node.name}.__code__"  # TODO
                 )
-
             # scopes.pop()
 
             if isinstance(node.parent, ast.ClassDef):
@@ -421,7 +409,7 @@ class sans:
             all_args = args + kwargs
             if hasattr(builtins, func_name) or lambda_manager.get_lambda(node.func.id):
                 return f"{func_name}({sln.join(all_args)})"
-            return prepend(f"{func_name}({sln.join(all_args)})")
+            return prepend + f"{func_name}({sln.join(all_args)})"
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             func_name = sans.transform_node(
                 node.func,
@@ -512,7 +500,7 @@ class sans:
 
             body = ", ".join(body_statements)
             orelse = ", ".join(orelse_statements)
-            return prepend(f"(({body}) if ({test}) else ({orelse or None}))")
+            return prepend + f"(({body}) if ({test}) else ({orelse or None}))"
 
         elif isinstance(node, ast.For | ast.AsyncFor):
             break_hit_var = generate_variable_name()
@@ -574,8 +562,9 @@ class sans:
             elif isinstance(node.target, ast.Tuple):
                 for i in node.target.elts:
                     loop_vars.remove(i.id)"""
-            return prepend(
-                f"[{f'({break_hit_var} := False), ' if any(isinstance(stmt, ast.Break) for stmt in ast.walk(node)) else ''}[({f'({continue_hit_var} := False), ' if any(isinstance(stmt, ast.Continue) for stmt in ast.walk(node)) else ''}{', '.join(combined_body)}) {'async ' if isinstance(node, ast.AsyncFor) else ''}for {target} in {iter_}]]"
+            return (
+                prepend
+                + f"[{f'({break_hit_var} := False), ' if any(isinstance(stmt, ast.Break) for stmt in ast.walk(node)) else ''}[({f'({continue_hit_var} := False), ' if any(isinstance(stmt, ast.Continue) for stmt in ast.walk(node)) else ''}{', '.join(combined_body)}) {'async ' if isinstance(node, ast.AsyncFor) else ''}for {target} in {iter_}]]"
             )
 
         elif isinstance(node, ast.Assign):  # TODO: implement in ast.AugAssign
@@ -616,14 +605,14 @@ class sans:
                     for t in node.targets
                     if isinstance(t, ast.Subscript)
                 ]
-                return prepend(f"{' and '.join(assignments)}")
+                return prepend + f"{' and '.join(assignments)}"
             if any(isinstance(i, ast.Attribute) for i in node.targets):
                 assignments = [
                     f"setattr({sans.transform_node(t.value, current_loop_and_function, varname, scopes, exc_name, loop_vars)}, {t.attr!r}, {value})"
                     for t in node.targets
                     if isinstance(t, ast.Attribute)
                 ]
-                return prepend(f"{' and '.join(assignments)}")
+                return prepend + f"{' and '.join(assignments)}"
 
             if check(
                 node.targets,
@@ -633,12 +622,14 @@ class sans:
                 item_var = generate_variable_name()
                 pycellset_var = generate_variable_name()
                 pyobject_var = generate_variable_name()
-                return prepend(
-                    f"(lambda {ctypes_var}, {item_var}: setattr({pycellset_var} := {ctypes_var}.pythonapi.PyCell_Set, 'argtypes', [{pyobject_var} := {ctypes_var}.py_object, {pyobject_var}]) or {pycellset_var}({item_var}, {pyobject_var}({value})))(__import__('ctypes'), {current_loop_and_function[0]['name']}.__closure__[{current_loop_and_function[0]['name']}.__code__.co_freevars.index({node.targets[0].id!r})])"
+                return (
+                    prepend
+                    + f"(lambda {ctypes_var}, {item_var}: setattr({pycellset_var} := {ctypes_var}.pythonapi.PyCell_Set, 'argtypes', [{pyobject_var} := {ctypes_var}.py_object, {pyobject_var}]) or {pycellset_var}({item_var}, {pyobject_var}({value})))(__import__('ctypes'), {current_loop_and_function[0]['name']}.__closure__[{current_loop_and_function[0]['name']}.__code__.co_freevars.index({node.targets[0].id!r})])"
                 )
             #            if not check(node.targets, assigned_vars):
+            if True:
 
-            """def append(iterable, first):
+                """def append(iterable, first):
                     if isinstance(iterable, ast.Name):
                         return iterable
                     elif isinstance(iterable, ast.List | ast.Tuple) and not first:
@@ -647,9 +638,9 @@ class sans:
                         assigned_vars.append(append(i, False))
 
                 append(node.targets, True)"""
-            return prepend(
-                transform_assignment(node, current_loop_and_function, varname, scopes)
-            )
+                return prepend + transform_assignment(
+                    node, current_loop_and_function, varname, scopes
+                )
         #           elif len(node.targets) == 1:
         #                return prepend + transform_assignment(
         #                   node, current_loop_and_function, varname, scopes
@@ -751,12 +742,14 @@ class sans:
                     )
                     # return f"{varname}.update({ {'__return_value': value} }) or None"
                     # update_lambda = "(lambda d, k, v: (d.__setitem__(k, v), v))"
-                    return prepend(
-                        f"({current_loop_and_function[0]['return_store_var']}.__setitem__(0, {value}) or ({current_loop_and_function[0]['return_hit_var']} := True))"
+                    return (
+                        prepend
+                        + f"({current_loop_and_function[0]['return_store_var']}.__setitem__(0, {value}) or ({current_loop_and_function[0]['return_hit_var']} := True))"
                     )
                 else:
-                    return prepend(
-                        f"({current_loop_and_function[0]['return_hit_var']} := True)"
+                    return (
+                        prepend
+                        + f"({current_loop_and_function[0]['return_hit_var']} := True)"
                     )
             else:
                 raise SyntaxError("return outside function wtf")
@@ -890,7 +883,7 @@ class sans:
             )
             # annotation_transformed = transform_node(annotation, current_loop_and_function, varname)
             # return f"(lambda: {varname}.update({{{target_repr}: {value_transformed}}}) or None)()"
-            return prepend(f"({target} := {value})")
+            return prepend + f"({target} := {value})"
         elif isinstance(node, ast.ClassDef):  # TODO: redo the whole thing
             # TODO keywords with types.new_class or sum
             class_name = node.name
@@ -958,19 +951,19 @@ class sans:
                     + ")"
                 )
             # return f"({varname}.update({{{repr(class_name)}: {cls}}}))"
-            return prepend(f"({class_name} := {cls})")
+            return prepend + f"({class_name} := {cls})"
         elif isinstance(node, ast.Import):
-            return prepend(", ".join(import_node_to_code(node)))
+            return prepend + ", ".join(import_node_to_code(node))
 
         elif isinstance(node, ast.ImportFrom):
-            return prepend(import_from_node_to_code(node))
+            return prepend + import_from_node_to_code(node)
 
         # return " and ".join(imports)
         elif isinstance(node, ast.JoinedStr):
             parts = []
             for part in node.values:
                 if isinstance(part, ast.Constant):
-                    parts.append(repr(part.s))
+                    parts.append(repr(part.value))
                 elif isinstance(part, ast.FormattedValue):
                     expr = sans.transform_node(
                         part.value,
@@ -1064,7 +1057,7 @@ class sans:
             body_var = generate_variable_name()
             # loop_gen = f"[{f'({break_hit_var} := False), ' if any(isinstance(stmt, ast.Break) for stmt in ast.walk(node)) else ''}list(__import__('itertools').takewhile(lambda {', '.join(dependencies)}: not {break_hit_var} and ({test}), ([({f'({continue_hit_var} := False), ' if any(isinstance(stmt, ast.Continue) for stmt in ast.walk(node)) else ''}{body}), {', '.join(dependencies)}][-1] for {underscore_var} in iter(int, 1))))]"
             loop_gen = f"[{f'({break_hit_var} := False), ' if any(isinstance(stmt, ast.Break) for stmt in ast.walk(node)) else ''}{body_var} := (({body} and {f'not {break_hit_var} and ' if any(isinstance(stmt, ast.Break) for stmt in ast.walk(node)) else ''}{test}) for {underscore_var} in iter(int, 1)), [None for {underscore_var_2} in iter(lambda: next({body_var}), False)]]"
-            return prepend(loop_gen)
+            return prepend + loop_gen
 
         # elif isinstance(node, (ast.Try, getattr(ast, "TryStar", None) or ast.Try)): TODO: make trystar
         elif isinstance(node, ast.Try):
@@ -1177,16 +1170,14 @@ class sans:
             exc_in_exit_variable_2 = generate_variable_name()
             self_variable = generate_variable_name()
             exc_1_variable = generate_variable_name()
-            orelse_iter_variable = generate_variable_name()
-            finally_iter_variable = generate_variable_name()
             handler_global_vars = []
 
             try_except_func = f"""\
 ({exc_variable} := [], {try_variable} := ({try_body}), \
 ({', '.join(f'{(lambda var: handler_global_vars.append(var) or var)(generate_variable_name())} := \
 ({body} for {exc_var} in {exc_variable})' for _, exc_var, body in handlers)}), \
-{orelse_body and f'{else_variable} := ({orelse_body} for {orelse_iter_variable} in [0]), '}\
-{finalbody and f'{finally_variable} := ({finalbody} for {finally_iter_variable} in [0]), '}\
+{orelse_body and f'{else_variable} := {orelse_body}, '}\
+{finalbody and f'{finally_variable} := {finalbody}, '}\
 type("__TryExcept", (__import__("contextlib").ContextDecorator,), {{\
 "__enter__": lambda {self_variable}: {self_variable}, \
 "__exit__": lambda {self_variable}, {exc_in_exit_variable_0}, {exc_in_exit_variable_used}, {exc_in_exit_variable_2}: {exc_in_exit_variable_used} and ({exc_variable}.append({exc_1_variable} := {exc_in_exit_variable_used}) \
@@ -1197,7 +1188,7 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
 
             print(try_except_func)
 
-            return prepend(try_except_func)
+            return prepend + try_except_func
 
         elif isinstance(node, ast.Subscript):
             value = sans.transform_node(
@@ -1347,8 +1338,9 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
             return f"({current_loop_and_function[2]} := True)"
         elif isinstance(node, ast.Raise):
             TEMP_NAME = generate_variable_name()
-            return prepend(
-                f"(_ for _ in ()).throw((lambda {TEMP_NAME}: setattr({TEMP_NAME}, '__cause__', {sans.transform_node(node.cause, current_loop_and_function, varname, scopes, exc_name, loop_vars)}{'()' if isinstance(node.cause, ast.Name) else ''}) or {TEMP_NAME})({sans.transform_node(node.exc, current_loop_and_function, varname, scopes, exc_name, loop_vars)}{'()' if isinstance(node.exc, ast.Name) else ''}))"
+            return (
+                prepend
+                + f"(_ for _ in ()).throw((lambda {TEMP_NAME}: setattr({TEMP_NAME}, '__cause__', {sans.transform_node(node.cause, current_loop_and_function, varname, scopes, exc_name, loop_vars)}{'()' if isinstance(node.cause, ast.Name) else ''}) or {TEMP_NAME})({sans.transform_node(node.exc, current_loop_and_function, varname, scopes, exc_name, loop_vars)}{'()' if isinstance(node.exc, ast.Name) else ''}))"
             )
         elif isinstance(node, ast.Match):
             subject = sans.transform_node(
@@ -1601,7 +1593,7 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
 
             cases = [transform_case(case) for case in node.cases]
             match_expression = " or ".join(cases)
-            return prepend(f"({match_expression})")
+            return prepend + f"({match_expression})"
         elif node is None:
             return "None"
         elif isinstance(node, ast.AugAssign):  # TODO: merge all ast.Assign conditions
@@ -1648,11 +1640,13 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 ctypes_var = generate_variable_name()
                 item_var = generate_variable_name()
                 i_var = generate_variable_name()
-                return prepend(
-                    f"[(lambda {ctypes_var}, {item_var}: {item_var} is not None and setattr({ctypes_var}.pythonapi.PyCell_Set, 'argtypes', [{ctypes_var}.py_object, {ctypes_var}.py_object]) or {ctypes_var}.pythonapi.PyCell_Set({item_var}, {ctypes_var}.py_object({value})))(__import__('ctypes'), next(({i_var} for {i_var} in {current_loop_and_function[0]['name']}.__closure__ if {i_var}.cell_contents == {node.targets[0].id}), None)), {node.targets[0].id} := {value}]"
+                return (
+                    prepend
+                    + f"[(lambda {ctypes_var}, {item_var}: {item_var} is not None and setattr({ctypes_var}.pythonapi.PyCell_Set, 'argtypes', [{ctypes_var}.py_object, {ctypes_var}.py_object]) or {ctypes_var}.pythonapi.PyCell_Set({item_var}, {ctypes_var}.py_object({value})))(__import__('ctypes'), next(({i_var} for {i_var} in {current_loop_and_function[0]['name']}.__closure__ if {i_var}.cell_contents == {node.targets[0].id}), None)), {node.targets[0].id} := {value}]"
                 )
-            return prepend(f"({target} := {target} {op} {value})")
+            return prepend + f"({target} := {target} {op} {value})"
         elif isinstance(node, ast.Delete):
+            # TODO XXX use the same thing as for wildcard import, just this time delete from f_locals.
             items = ",".join(
                 f"({sans.transform_node(i, current_loop_and_function, varname, scopes, exc_name, loop_vars)})"
                 for i in node.targets
@@ -1668,8 +1662,9 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 ),
                 current_loop_and_function[0]["name"],
             }
-            return prepend(
-                f"exec({repr(f'del {items}')}, globals(), {{{(lambda s: s + ', ' if s else '')(', '.join(f'{i!r}: {i}' for i in name_references))}, **locals()}})"
+            return (
+                prepend
+                + f"exec({repr(f'del {items}')}, globals(), {{{(lambda s: s + ', ' if s else '')(', '.join(f'{i!r}: {i}' for i in name_references))}, **locals()}})"
             )
         elif isinstance(node, ast.With | ast.AsyncWith):
             with_items = [
@@ -1718,8 +1713,9 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 ),
                 current_loop_and_function[0]["name"],
             }
-            return prepend(
-                f"exec({with_statement!r}, globals(), {{{(lambda s: s + ', ' if s else '')(', '.join(f'{i!r}: {i}' for i in name_references))}**locals()}})"
+            return (
+                prepend
+                + f"exec({with_statement!r}, globals(), {{{(lambda s: s + ', ' if s else '')(', '.join(f'{i!r}: {i}' for i in name_references))}**locals()}})"
             )
         elif isinstance(node, ast.Global):
             # comma = ", "
@@ -1782,8 +1778,9 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 loop_vars,
             )
             # return f"exec({f'assert ({test}){msg_str}'!r})"
-            return prepend(
-                f"(_ for _ in ()).throw(AssertionError({msg if node.msg else ''}))"
+            return (
+                prepend
+                + f"(_ for _ in ()).throw(AssertionError({msg if node.msg else ''}))"
             )
             # return f"(exec({f'raise AssertionError({msg if node.msg else empty_str})'!r}) if not ({test}) else None)"
         elif isinstance(node, ast.Await):

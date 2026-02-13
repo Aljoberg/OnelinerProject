@@ -18,11 +18,15 @@ class LambdaManager:
         scopes,
         current_function,
         prepend,
+        async_adder
     ):
         self.lambdas[func_name] = (
             func_name  # resolve_variable(func_name, scopes, current_function)
-        )
-        return prepend(f"({func_name} := {lambda_exp})")
+        ) # FIXME lmao what is this code
+        if async_adder:
+            return prepend(f"(({func_name} := {lambda_exp}), {async_adder})")
+        else:
+            return prepend(f"({func_name} := {lambda_exp})")
         # return f"({variables_dict_name}.update({{{repr(func_name)}: {lambda_exp}}}))"
 
     def get_lambda(self, func_name):
@@ -139,7 +143,9 @@ def import_from_node_to_code(node: ast.ImportFrom):
     module = node.module or ""
     level = node.level
     # import_cached_varname = None if len(node.names) == 1 else generate_variable_name()
-    import_cached_varname = generate_variable_name() # TODO not needed if only one module
+    import_cached_varname = (
+        generate_variable_name()
+    )  # TODO not needed if only one module
     import_string = f"{f'({import_cached_varname} := ' if import_cached_varname else ''}__import__({module!r}, globals(), locals(), [{', '.join(repr(i.asname if i.asname else i.name) for i in node.names)}], {level}){')' if import_cached_varname else ''}"
     import_var = import_cached_varname or import_string
     for alias in node.names:
@@ -150,7 +156,9 @@ def import_from_node_to_code(node: ast.ImportFrom):
             # )  # Using exec for wildcard import
             # fucking ni treba tega jebenega sranja
             # still cool tho
-            lines.append(f"globals().update({{{k}: getattr({import_cached_varname}, {k}) for {k} in getattr({import_cached_varname}, '__all__', 0) or (i for i in dir({import_cached_varname}) if not i.startswith('__'))}})")
+            lines.append(
+                f"globals().update({{{k}: getattr({import_cached_varname}, {k}) for {k} in getattr({import_cached_varname}, '__all__', 0) or (i for i in dir({import_cached_varname}) if not i.startswith('__'))}})"
+            )
             # lines.append(f"({frame_var} := __import__('inspect').stack()[0][0], {frame_var}.f_locals.update({{{k}: getattr({import_cached_varname}, {k}) for {k} in getattr({import_cached_varname}, '__all__', 0) or (i for i in dir({import_cached_varname}) if not i.startswith('__'))}}), ({ctypes_var} := __import__('ctypes')).pythonapi.PyFrame_LocalsToFast({ctypes_var}.py_object({frame_var}), {ctypes_var}.c_int(0)))")
             # if current_function is not None: # TODO move to function def
             #     code_var = generate_variable_name()
@@ -371,12 +379,13 @@ class sans:
 
             # TODO clean all of this fucking weird code up
             is_async = isinstance(node, ast.AsyncFunctionDef)
+            toggle_async = None
             if is_async:
                 code_var = generate_variable_name()
-                toggle_async = f"setattr({node.name}, '__code__', ({code_var} := {node.name}.__code__).replace(co_flags={code_var}.co_flags ^ 32 | 128))"
+                toggle_async = f"setattr({node.name}, '__code__', ({code_var} := {node.name}.__code__).replace(co_flags={code_var}.co_flags & ~32 | 128))"
                 # FIXME move below the declaration, or else it won't be declared yet
 
-            func_expression = f"{'(' if is_async else ''}lambda{(' ' + init_args) if init_args else ''}: {f'({return_store_var} := [None]) and ({return_hit_var} := False) or ' if has_return else ''}[{body}{f', {return_store_var}[0]' if has_return else ', None'}][-1]{f', {toggle_async})' if is_async else ''}"
+            func_expression = f"lambda{(' ' + init_args) if init_args else ''}: {f'({return_store_var} := [None]) and ({return_hit_var} := False) or ' if has_return else ''}[{body}{f', {return_store_var}[0]' if has_return else ', None'}][-1]"
             for i in node.decorator_list:
                 func_expression = (
                     f"({sans.transform_node(i, current_loop_and_function, varname, scopes, exc_name, loop_vars)})("
@@ -396,6 +405,7 @@ class sans:
                 scopes,
                 current_loop_and_function[0]["name"],
                 prepend,
+                toggle_async
             )
 
         elif isinstance(node, ast.Name):
@@ -1335,6 +1345,15 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 if node.step
                 else ""
             )
+            if isinstance(node.parent, ast.Subscript) and isinstance(
+                node.parent.ctx, ast.Store
+            ):
+                start = int(start) if len(start) > 0 else None
+                stop = int(stop) if len(stop) > 0 else None
+                step = int(step) if len(step) > 0 else None
+                return str(
+                    slice(start, stop, step)
+                )  # TODO move to ast.Assign, shorten if no step (`slice(x, y)` stringifies into "slice(x, y, None)")
             if step:
                 return f"{start}:{stop}:{step}"
             else:

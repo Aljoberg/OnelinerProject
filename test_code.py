@@ -1,6 +1,4 @@
 try:
-    assert False
-except AssertionError:
-    print("AssertionError raised")
-else:
-    print("AssertionError not raised")
+    1 / 0
+except ZeroDivisionError as e:
+    print(f"error: {e}")
