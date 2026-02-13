@@ -1202,7 +1202,7 @@ type("__TryExcept", (__import__("contextlib").ContextDecorator,), {{\
 "__exit__": lambda {self_variable}, {exc_in_exit_variable_0}, {exc_in_exit_variable_used}, {exc_in_exit_variable_2}: {exc_in_exit_variable_used} and ({exc_variable}.append({exc_1_variable} := {exc_in_exit_variable_used}) \
 or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}, {exc_name}) else' if exc_name else ''}''' for i, (exc_name, _, _) in enumerate(handlers))} {'None' if handlers[-1][0] else ''}))\
 {finalbody and f' and (*{finally_variable},) '}\
-}})()(lambda: (*{try_variable},{orelse_body and f' *{else_variable}'}))()\
+}})()(lambda: (*{try_variable},{orelse_body and f' *{else_variable}'}{finalbody and f', *{finally_variable}' if orelse_body else f' *{finally_variable}'}))()\
 )"""
 
             print(try_except_func)
@@ -1691,55 +1691,238 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 f"exec({repr(f'del {items}')}, globals(), {{{(lambda s: s + ', ' if s else '')(', '.join(f'{i!r}: {i}' for i in name_references))}, **locals()}})"
             )
         elif isinstance(node, ast.With | ast.AsyncWith):
-            with_items = [
-                transform_with_item(
-                    item,
-                    current_loop_and_function,
-                    varname,
-                    scopes,
-                    exc_name,
-                    loop_vars,
-                )
-                for item in node.items
-            ]
-            body = [
-                sans.transform_node(
-                    stmt,
-                    current_loop_and_function,
-                    varname,
-                    scopes,
-                    exc_name,
-                    loop_vars,
-                )
-                for stmt in node.body
-            ]
-
-            body = ", ".join([f"{expr}" for expr in body])
-
-            with_statement = (
-                f"{'async ' if isinstance(node, ast.AsyncWith) else ''}with "
-                + ", ".join(i[0] for i in with_items)
-                + ": "
-                + "["
-                + body
-                + "]"
-            )
-            name_references = {
-                *(
-                    i.id
-                    for m in node.body
-                    for i in ast.walk(m)
-                    if (
-                        isinstance(i, ast.Name)
-                        and isinstance(i.ctx, ast.Load)
-                        and not hasattr(builtins, i.id)
+            # Generate unique variable names for the context manager protocol
+            manager_var = generate_variable_name()
+            enter_var = generate_variable_name()
+            exit_var = generate_variable_name()
+            value_var = generate_variable_name()
+            hit_except_var = generate_variable_name()
+            exc_info_var = generate_variable_name()
+            suppress_var = generate_variable_name()
+            
+            # For nested with statements (multiple items), process them recursively
+            # with EXPR1 as VAR1, EXPR2 as VAR2: SUITE
+            # becomes:
+            # with EXPR1 as VAR1:
+            #     with EXPR2 as VAR2:
+            #         SUITE
+            if len(node.items) > 1:
+                # Create inner with statement with remaining items
+                if isinstance(node, ast.AsyncWith):
+                    inner_with = ast.AsyncWith(
+                        items=node.items[1:],
+                        body=node.body,
+                        lineno=node.lineno if hasattr(node, 'lineno') else 0,
+                        col_offset=node.col_offset if hasattr(node, 'col_offset') else 0
                     )
-                ),
-                current_loop_and_function[0]["name"],
-            }
-            return prepend(
-                f"exec({with_statement!r}, globals(), {{{(lambda s: s + ', ' if s else '')(', '.join(f'{i!r}: {i}' for i in name_references))}**locals()}})"
+                else:
+                    inner_with = ast.With(
+                        items=node.items[1:],
+                        body=node.body,
+                        lineno=node.lineno if hasattr(node, 'lineno') else 0,
+                        col_offset=node.col_offset if hasattr(node, 'col_offset') else 0
+                    )
+                
+                # Create outer with statement with first item only
+                if isinstance(node, ast.AsyncWith):
+                    outer_with = ast.AsyncWith(
+                        items=[node.items[0]],
+                        body=[inner_with],
+                        lineno=node.lineno if hasattr(node, 'lineno') else 0,
+                        col_offset=node.col_offset if hasattr(node, 'col_offset') else 0
+                    )
+                else:
+                    outer_with = ast.With(
+                        items=[node.items[0]],
+                        body=[inner_with],
+                        lineno=node.lineno if hasattr(node, 'lineno') else 0,
+                        col_offset=node.col_offset if hasattr(node, 'col_offset') else 0
+                    )
+                
+                # Recursively transform the nested structure
+                return sans.transform_node(
+                    outer_with,
+                    current_loop_and_function,
+                    varname,
+                    scopes,
+                    exc_name,
+                    loop_vars
+                )
+            
+            # Single with item - base case
+            item = node.items[0]
+            
+            # Transform the context expression (EXPRESSION)
+            context_expr = sans.transform_node(
+                item.context_expr,
+                current_loop_and_function,
+                varname,
+                scopes,
+                exc_name,
+                loop_vars
             )
+            
+            # Determine if we're async
+            is_async = isinstance(node, ast.AsyncWith)
+            enter_method = "__aenter__" if is_async else "__enter__"
+            exit_method = "__aexit__" if is_async else "__exit__"
+            
+            # Build try body: optionally assign TARGET = value, then execute SUITE
+            try_stmts = []
+            
+            # Handle optional variable assignment (as TARGET)
+            if item.optional_vars:
+                if isinstance(item.optional_vars, ast.Name):
+                    # Simple case: with expr as var:
+                    assign = ast.Assign(
+                        targets=[item.optional_vars],
+                        value=ast.Name(id=value_var, ctx=ast.Load())
+                    )
+                    try_stmts.append(assign)
+                elif isinstance(item.optional_vars, (ast.Tuple, ast.List)):
+                    # Tuple unpacking: with expr as (a, b):
+                    # Create assignments for each element
+                    assign = ast.Assign(
+                        targets=[item.optional_vars],
+                        value=ast.Name(id=value_var, ctx=ast.Load())
+                    )
+                    try_stmts.append(assign)
+                else:
+                    # Other assignment targets (attributes, subscripts, etc.)
+                    assign = ast.Assign(
+                        targets=[item.optional_vars],
+                        value=ast.Name(id=value_var, ctx=ast.Load())
+                    )
+                    try_stmts.append(assign)
+            
+            # Add the body statements
+            try_stmts.extend(node.body)
+            
+            # Build except handler body following the semantics:
+            # except:
+            #     hit_except = True
+            #     if not exit(manager, *sys.exc_info()):
+            #         raise
+            except_stmts = [
+                # hit_except := True
+                ast.Expr(value=ast.NamedExpr(
+                    target=ast.Name(id=hit_except_var, ctx=ast.Store()),
+                    value=ast.Constant(value=True)
+                )),
+                # exc_info := sys.exc_info()
+                ast.Expr(value=ast.NamedExpr(
+                    target=ast.Name(id=exc_info_var, ctx=ast.Store()),
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Call(
+                                func=ast.Name(id='__import__', ctx=ast.Load()),
+                                args=[ast.Constant(value='sys')],
+                                keywords=[]
+                            ),
+                            attr='exc_info',
+                            ctx=ast.Load()
+                        ),
+                        args=[],
+                        keywords=[]
+                    )
+                )),
+                # suppress := exit(manager, *exc_info)
+                # ast.Expr(value=ast.NamedExpr(
+                #     target=ast.Name(id=suppress_var, ctx=ast.Store()),
+                #     value=ast.Call(
+                #         func=ast.Name(id=exit_var, ctx=ast.Load()),
+                #         args=[
+                #             ast.Name(id=manager_var, ctx=ast.Load()),
+                #             ast.Starred(
+                #                 value=ast.Name(id=exc_info_var, ctx=ast.Load()),
+                #                 ctx=ast.Load()
+                #             )
+                #         ],
+                #         keywords=[]
+                #     )
+                # )),
+                # if not suppress: raise
+                # ast.If(
+                #     test=ast.UnaryOp(
+                #         op=ast.Not(),
+                #         operand=ast.Name(id=suppress_var, ctx=ast.Load())
+                #     ),
+                #     body=[
+                #         ast.Raise(exc=None, cause=None)  # Re-raise the exception
+                #     ],
+                #     orelse=[]
+                # )
+            ]
+            
+            # Build finally body following the semantics:
+            # finally:
+            #     if not hit_except:
+            #         exit(manager, None, None, None)
+            finally_stmts = [
+                ast.If(
+                    test=ast.UnaryOp(
+                        op=ast.Not(),
+                        operand=ast.Name(id=hit_except_var, ctx=ast.Load())
+                    ),
+                    body=[
+                        ast.Expr(value=ast.Call(
+                            func=ast.Name(id=exit_var, ctx=ast.Load()),
+                            args=[
+                                ast.Name(id=manager_var, ctx=ast.Load()),
+                                ast.Constant(value=None),
+                                ast.Constant(value=None),
+                                ast.Constant(value=None)
+                            ],
+                            keywords=[]
+                        ))
+                    ],
+                    orelse=[]
+                )
+            ]
+            
+            # Create the try-except-finally node
+            try_node = ast.Try(
+                body=try_stmts,
+                handlers=[
+                    ast.ExceptHandler(
+                        type=None,  # Bare except to catch all exceptions
+                        name=None,
+                        body=except_stmts
+                    )
+                ],
+                orelse=[],
+                finalbody=finally_stmts
+            )
+            
+            # Transform the try node using the existing try transformation
+            try_code = sans.transform_node(
+                try_node,
+                current_loop_and_function,
+                varname,
+                scopes,
+                exc_name,
+                loop_vars
+            )
+            
+            # Build the complete with transformation following the protocol:
+            # (
+            #   manager := (EXPRESSION),
+            #   enter := type(manager).__enter__,
+            #   exit := type(manager).__exit__,
+            #   value := enter(manager),
+            #   hit_except := False,
+            #   <try-except-finally code>
+            # )[-1]
+            with_code = f"""(
+{manager_var} := {context_expr},
+{enter_var} := type({manager_var}).{enter_method},
+{exit_var} := type({manager_var}).{exit_method},
+{value_var} := {enter_var}({manager_var}),
+{hit_except_var} := False,
+{try_code}
+)[-1]"""
+            
+            return prepend(with_code)
         elif isinstance(node, ast.Global):
             # comma = ", "
             # return f"exec({repr(f'global {comma.join(i for i in node.names)}')}, globals(), locals())"
