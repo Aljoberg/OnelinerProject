@@ -2080,5 +2080,5 @@ code = open("test_code.py", errors="ignore").read()
 # hi()
 # """
 # print(code_to_oneliner(code))
-with open("uhoh.py", "w") as f:
+with open("output_code.py", "w") as f:
     f.write(code_to_oneliner(code))
