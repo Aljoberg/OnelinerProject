@@ -1,4 +1,6 @@
 import ast, builtins, string, itertools, keyword
+from typing import Callable, TypeVar
+from utils import generate_name, stmt_handlers, prepend, ctx
 
 sln = ", "
 
@@ -18,11 +20,11 @@ class LambdaManager:
         scopes,
         current_function,
         prepend,
-        async_adder
+        async_adder,
     ):
         self.lambdas[func_name] = (
-            func_name  # resolve_variable(func_name, scopes, current_function)
-        ) # FIXME lmao what is this code
+            func_name  # resolve_variable(func_name, scopes, current_function)  # FIXME lmao what is this code
+        )
         if async_adder:
             return prepend(f"(({func_name} := {lambda_exp}), {async_adder})")
         else:
@@ -54,6 +56,8 @@ check = lambda first, lookup: any(
     for i in first
 )
 
+generate_variable_name = generate_name  # for compatibility
+
 
 class LambdaWrapper:
 
@@ -68,21 +72,6 @@ class LambdaWrapper:
     def __repr__(self):
         return f"lambda {', '.join(self.args)}: {self.body}"
 
-
-def generate_variable_name():
-    possible_chars = string.ascii_letters
-    name_generator = (
-        "".join(name)
-        for length in itertools.count(1)
-        for name in itertools.product(possible_chars, repeat=length)
-    )
-    name = next(
-        name
-        for name in name_generator
-        if name not in forbidden_names and not keyword.iskeyword(name)
-    )
-    forbidden_names.add(name)
-    return name
 
 
 # assigned_vars = {"__global": []}
@@ -224,6 +213,7 @@ def transform_assignment(
         return parse_assign(node, tsn, current_function)
 
 
+
 class sans:
     # func_dict = None
     pending_assignments = []
@@ -247,12 +237,10 @@ class sans:
 
         # if not scopes:
         #     scopes = [varname]
-        def prepend(contents: str):
-            valooe = f"{(current_loop_and_function[0] or {}).get('return_hit_var')} or "  # <3.12 moment
-            # valooe_loop = f"not {current_loop_and_function[1]} and not {current_loop_and_function[2]} and "
-            valooe_loop = f"any(({current_loop_and_function[1]}, {current_loop_and_function[2]})) or "
-            # input()
-            return f'({valooe if current_loop_and_function[0]["has_return"] else ""}{valooe_loop if current_loop_and_function[1] else ""}{contents})'
+
+
+        if type(node) in stmt_handlers:
+            return stmt_handlers[type(node)](node, sans.transform_node, ctx)
 
         if isinstance(node, ast.Expr):
             return prepend(
@@ -405,7 +393,7 @@ class sans:
                 scopes,
                 current_loop_and_function[0]["name"],
                 prepend,
-                toggle_async
+                toggle_async,
             )
 
         elif isinstance(node, ast.Name):
@@ -477,52 +465,6 @@ class sans:
             ]
             all_args = args + kwargs
             return f"{func_name}({sln.join(all_args)})"
-        elif isinstance(node, ast.Attribute):
-            value = sans.transform_node(
-                node.value,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            return f"{value}.{node.attr}"
-        elif isinstance(node, ast.If):
-            test = sans.transform_node(
-                node.test,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            body_statements = [
-                sans.transform_node(
-                    stmt,
-                    current_loop_and_function,
-                    varname,
-                    scopes,
-                    exc_name,
-                    loop_vars,
-                )
-                for stmt in node.body
-            ]
-            orelse_statements = [
-                sans.transform_node(
-                    stmt,
-                    current_loop_and_function,
-                    varname,
-                    scopes,
-                    exc_name,
-                    loop_vars,
-                )
-                for stmt in node.orelse
-                if stmt
-            ]
-
-            body = ", ".join(body_statements)
-            orelse = ", ".join(orelse_statements)
-            return prepend(f"(({body}) if ({test}) else ({orelse or None}))")
 
         elif isinstance(node, ast.For | ast.AsyncFor):
             break_hit_var = generate_variable_name()
@@ -687,67 +629,7 @@ class sans:
                 loop_vars,
             )
             return f"({left} {op} {right})"
-        elif isinstance(node, ast.Add):
-            return "+"
-        elif isinstance(node, ast.Sub):
-            return "-"
-        elif isinstance(node, ast.Pow):
-            return "**"
-        elif isinstance(node, ast.Compare):
-            left = sans.transform_node(
-                node.left,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            ops = [
-                sans.transform_node(
-                    op, current_loop_and_function, varname, scopes, exc_name, loop_vars
-                )
-                for op in node.ops
-            ]
-            comparators = [
-                sans.transform_node(
-                    comparator,
-                    current_loop_and_function,
-                    varname,
-                    scopes,
-                    exc_name,
-                    loop_vars,
-                )
-                for comparator in node.comparators
-            ]
-            comparisons = " ".join(
-                f"{op} {comparator}" for op, comparator in zip(ops, comparators)
-            )
-            return f"({left} {comparisons})"
-        elif isinstance(node, ast.Eq):
-            return "=="
-        elif isinstance(node, ast.NotEq):
-            return "!="
-        elif isinstance(node, ast.Lt):
-            return "<"
-        elif isinstance(node, ast.LtE):
-            return "<="
-        elif isinstance(node, ast.Gt):
-            return ">"
-        elif isinstance(node, ast.GtE):
-            return ">="
-        elif isinstance(node, ast.Div):
-            return "/"
-        elif isinstance(node, ast.Constant):
-            if node.value is None:
-                return "None"
-            if node.value == ...:
-                return "..."
-            if isinstance(node.value, (str, int, float)):
-                return repr(node.value)
-            else:
-                raise NotImplementedError(
-                    f"Constant type {type(node.value)} not implemented."
-                )
+
         elif isinstance(node, ast.Return):
             if current_loop_and_function[0]:
                 if node.value:
@@ -859,8 +741,6 @@ class sans:
             # print(comprehension)
             # input()
             return comprehension
-        elif isinstance(node, ast.Mult):
-            return "*"
         elif isinstance(node, ast.ListComp):
             elt = sans.transform_node(
                 node.elt,
@@ -902,7 +782,7 @@ class sans:
             # return f"(lambda: {varname}.update({{{target_repr}: {value_transformed}}}) or None)()"
             return prepend(f"({target} := {value})")
         elif isinstance(node, ast.ClassDef):  # TODO: redo the whole thing
-            # TODO keywords with types.new_class or sum
+            # TODO types.new_class
             class_name = node.name
             base_classes = [
                 sans.transform_node(
@@ -975,6 +855,8 @@ class sans:
         elif isinstance(node, ast.ImportFrom):
             return prepend(import_from_node_to_code(node))
 
+        elif isinstance(node, ast.Constant):
+            return repr(node.value)
         # return " and ".join(imports)
         elif isinstance(node, ast.JoinedStr):
             parts = []
@@ -1202,101 +1084,13 @@ type("__TryExcept", (__import__("contextlib").ContextDecorator,), {{\
 "__exit__": lambda {self_variable}, {exc_in_exit_variable_0}, {exc_in_exit_variable_used}, {exc_in_exit_variable_2}: {exc_in_exit_variable_used} and ({exc_variable}.append({exc_1_variable} := {exc_in_exit_variable_used}) \
 or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}, {exc_name}) else' if exc_name else ''}''' for i, (exc_name, _, _) in enumerate(handlers))} {'None' if handlers[-1][0] else ''}))\
 {finalbody and f' and (*{finally_variable},) '}\
-}})()(lambda: (*{try_variable},{orelse_body and f' *{else_variable}'}{finalbody and f', *{finally_variable}' if orelse_body else f' *{finally_variable}'}))()\
+}})()(lambda: (*{try_variable},{orelse_body and f' *{else_variable}'}{finalbody and (f', *{finally_variable}' if orelse_body else f' *{finally_variable}')}))()\
 )"""
 
             print(try_except_func)
 
             return prepend(try_except_func)
 
-        elif isinstance(node, ast.Subscript):
-            value = sans.transform_node(
-                node.value,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            slice_ = sans.transform_node(
-                node.slice,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            return f"{value}[{slice_}]"
-
-        elif isinstance(node, ast.BoolOp):
-            operator = sans.transform_node(
-                node.op, current_loop_and_function, varname, scopes, exc_name, loop_vars
-            )
-            values = [
-                f"({sans.transform_node(value, current_loop_and_function, varname, scopes, exc_name, loop_vars)})"
-                for value in node.values
-            ]
-            print(values, operator, f" {operator} ".join(values))
-            return f" {operator} ".join(values)
-        elif isinstance(node, ast.And):
-            return "and"
-
-        elif isinstance(node, ast.Or):
-            return "or"
-        elif isinstance(node, ast.UnaryOp):
-            operator = sans.transform_node(
-                node.op, current_loop_and_function, varname, scopes, exc_name, loop_vars
-            )
-            operand = sans.transform_node(
-                node.operand,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            return f"{operator}{operand}"
-        elif isinstance(node, ast.USub):
-            return "-"
-
-        elif isinstance(node, ast.UAdd):
-            return "+"
-        elif isinstance(node, ast.Not):
-            return "not "
-        elif isinstance(node, ast.NotIn):
-            return "not in"
-        elif isinstance(node, ast.Invert):
-            return "~"
-        elif isinstance(node, ast.IfExp):
-            test = sans.transform_node(
-                node.test,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            body = sans.transform_node(
-                node.body,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            orelse = sans.transform_node(
-                node.orelse,
-                current_loop_and_function,
-                varname,
-                scopes,
-                exc_name,
-                loop_vars,
-            )
-            # print(orelse)
-            # input()
-            return f"({body} if {test} else {orelse})"
-        elif isinstance(node, ast.In):
-            return "in"
         elif isinstance(node, ast.Lambda):
             args = [arg.arg for arg in node.args.args]
             body = sans.transform_node(
@@ -1699,7 +1493,7 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
             hit_except_var = generate_variable_name()
             exc_info_var = generate_variable_name()
             suppress_var = generate_variable_name()
-            
+
             # For nested with statements (multiple items), process them recursively
             # with EXPR1 as VAR1, EXPR2 as VAR2: SUITE
             # becomes:
@@ -1712,33 +1506,41 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                     inner_with = ast.AsyncWith(
                         items=node.items[1:],
                         body=node.body,
-                        lineno=node.lineno if hasattr(node, 'lineno') else 0,
-                        col_offset=node.col_offset if hasattr(node, 'col_offset') else 0
+                        lineno=node.lineno if hasattr(node, "lineno") else 0,
+                        col_offset=(
+                            node.col_offset if hasattr(node, "col_offset") else 0
+                        ),
                     )
                 else:
                     inner_with = ast.With(
                         items=node.items[1:],
                         body=node.body,
-                        lineno=node.lineno if hasattr(node, 'lineno') else 0,
-                        col_offset=node.col_offset if hasattr(node, 'col_offset') else 0
+                        lineno=node.lineno if hasattr(node, "lineno") else 0,
+                        col_offset=(
+                            node.col_offset if hasattr(node, "col_offset") else 0
+                        ),
                     )
-                
+
                 # Create outer with statement with first item only
                 if isinstance(node, ast.AsyncWith):
                     outer_with = ast.AsyncWith(
                         items=[node.items[0]],
                         body=[inner_with],
-                        lineno=node.lineno if hasattr(node, 'lineno') else 0,
-                        col_offset=node.col_offset if hasattr(node, 'col_offset') else 0
+                        lineno=node.lineno if hasattr(node, "lineno") else 0,
+                        col_offset=(
+                            node.col_offset if hasattr(node, "col_offset") else 0
+                        ),
                     )
                 else:
                     outer_with = ast.With(
                         items=[node.items[0]],
                         body=[inner_with],
-                        lineno=node.lineno if hasattr(node, 'lineno') else 0,
-                        col_offset=node.col_offset if hasattr(node, 'col_offset') else 0
+                        lineno=node.lineno if hasattr(node, "lineno") else 0,
+                        col_offset=(
+                            node.col_offset if hasattr(node, "col_offset") else 0
+                        ),
                     )
-                
+
                 # Recursively transform the nested structure
                 return sans.transform_node(
                     outer_with,
@@ -1746,12 +1548,12 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                     varname,
                     scopes,
                     exc_name,
-                    loop_vars
+                    loop_vars,
                 )
-            
+
             # Single with item - base case
             item = node.items[0]
-            
+
             # Transform the context expression (EXPRESSION)
             context_expr = sans.transform_node(
                 item.context_expr,
@@ -1759,24 +1561,24 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 varname,
                 scopes,
                 exc_name,
-                loop_vars
+                loop_vars,
             )
-            
+
             # Determine if we're async
             is_async = isinstance(node, ast.AsyncWith)
             enter_method = "__aenter__" if is_async else "__enter__"
             exit_method = "__aexit__" if is_async else "__exit__"
-            
+
             # Build try body: optionally assign TARGET = value, then execute SUITE
             try_stmts = []
-            
+
             # Handle optional variable assignment (as TARGET)
             if item.optional_vars:
                 if isinstance(item.optional_vars, ast.Name):
                     # Simple case: with expr as var:
                     assign = ast.Assign(
                         targets=[item.optional_vars],
-                        value=ast.Name(id=value_var, ctx=ast.Load())
+                        value=ast.Name(id=value_var, ctx=ast.Load()),
                     )
                     try_stmts.append(assign)
                 elif isinstance(item.optional_vars, (ast.Tuple, ast.List)):
@@ -1784,20 +1586,20 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                     # Create assignments for each element
                     assign = ast.Assign(
                         targets=[item.optional_vars],
-                        value=ast.Name(id=value_var, ctx=ast.Load())
+                        value=ast.Name(id=value_var, ctx=ast.Load()),
                     )
                     try_stmts.append(assign)
                 else:
                     # Other assignment targets (attributes, subscripts, etc.)
                     assign = ast.Assign(
                         targets=[item.optional_vars],
-                        value=ast.Name(id=value_var, ctx=ast.Load())
+                        value=ast.Name(id=value_var, ctx=ast.Load()),
                     )
                     try_stmts.append(assign)
-            
+
             # Add the body statements
             try_stmts.extend(node.body)
-            
+
             # Build except handler body following the semantics:
             # except:
             #     hit_except = True
@@ -1805,27 +1607,31 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
             #         raise
             except_stmts = [
                 # hit_except := True
-                ast.Expr(value=ast.NamedExpr(
-                    target=ast.Name(id=hit_except_var, ctx=ast.Store()),
-                    value=ast.Constant(value=True)
-                )),
-                # exc_info := sys.exc_info()
-                ast.Expr(value=ast.NamedExpr(
-                    target=ast.Name(id=exc_info_var, ctx=ast.Store()),
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Call(
-                                func=ast.Name(id='__import__', ctx=ast.Load()),
-                                args=[ast.Constant(value='sys')],
-                                keywords=[]
-                            ),
-                            attr='exc_info',
-                            ctx=ast.Load()
-                        ),
-                        args=[],
-                        keywords=[]
+                ast.Expr(
+                    value=ast.NamedExpr(
+                        target=ast.Name(id=hit_except_var, ctx=ast.Store()),
+                        value=ast.Constant(value=True),
                     )
-                )),
+                ),
+                # exc_info := sys.exc_info()
+                ast.Expr(
+                    value=ast.NamedExpr(
+                        target=ast.Name(id=exc_info_var, ctx=ast.Store()),
+                        value=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Call(
+                                    func=ast.Name(id="__import__", ctx=ast.Load()),
+                                    args=[ast.Constant(value="sys")],
+                                    keywords=[],
+                                ),
+                                attr="exc_info",
+                                ctx=ast.Load(),
+                            ),
+                            args=[],
+                            keywords=[],
+                        ),
+                    )
+                ),
                 # suppress := exit(manager, *exc_info)
                 # ast.Expr(value=ast.NamedExpr(
                 #     target=ast.Name(id=suppress_var, ctx=ast.Store()),
@@ -1853,7 +1659,7 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 #     orelse=[]
                 # )
             ]
-            
+
             # Build finally body following the semantics:
             # finally:
             #     if not hit_except:
@@ -1862,24 +1668,26 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 ast.If(
                     test=ast.UnaryOp(
                         op=ast.Not(),
-                        operand=ast.Name(id=hit_except_var, ctx=ast.Load())
+                        operand=ast.Name(id=hit_except_var, ctx=ast.Load()),
                     ),
                     body=[
-                        ast.Expr(value=ast.Call(
-                            func=ast.Name(id=exit_var, ctx=ast.Load()),
-                            args=[
-                                ast.Name(id=manager_var, ctx=ast.Load()),
-                                ast.Constant(value=None),
-                                ast.Constant(value=None),
-                                ast.Constant(value=None)
-                            ],
-                            keywords=[]
-                        ))
+                        ast.Expr(
+                            value=ast.Call(
+                                func=ast.Name(id=exit_var, ctx=ast.Load()),
+                                args=[
+                                    ast.Name(id=manager_var, ctx=ast.Load()),
+                                    ast.Constant(value=None),
+                                    ast.Constant(value=None),
+                                    ast.Constant(value=None),
+                                ],
+                                keywords=[],
+                            )
+                        )
                     ],
-                    orelse=[]
+                    orelse=[],
                 )
             ]
-            
+
             # Create the try-except-finally node
             try_node = ast.Try(
                 body=try_stmts,
@@ -1887,13 +1695,13 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                     ast.ExceptHandler(
                         type=None,  # Bare except to catch all exceptions
                         name=None,
-                        body=except_stmts
+                        body=except_stmts,
                     )
                 ],
                 orelse=[],
-                finalbody=finally_stmts
+                finalbody=finally_stmts,
             )
-            
+
             # Transform the try node using the existing try transformation
             try_code = sans.transform_node(
                 try_node,
@@ -1901,9 +1709,9 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
                 varname,
                 scopes,
                 exc_name,
-                loop_vars
+                loop_vars,
             )
-            
+
             # Build the complete with transformation following the protocol:
             # (
             #   manager := (EXPRESSION),
@@ -1921,7 +1729,7 @@ or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}
 {hit_except_var} := False,
 {try_code}
 )[-1]"""
-            
+
             return prepend(with_code)
         elif isinstance(node, ast.Global):
             # comma = ", "
@@ -2044,6 +1852,19 @@ def code_to_oneliner(code):
 
     slashn = ", "
     return f"({slashn.join(sans.imports_list + sans.pending_assignments + transformed_statements)})"
+
+
+
+
+import transforms # TODO relative import probably
+print("hello", transforms)
+
+# @Handle(ast.BinOp)
+# def adder(node: ast.BinOp, transform: TransformFunc) -> str:
+#     reveal_type(node)        # ast.BinOp
+#     reveal_type(transform)  # Callable[[ast.AST], str]
+
+#     return f"({transform(node.left)} {transform(node.op)} {transform(node.right)})"
 
 
 # Test

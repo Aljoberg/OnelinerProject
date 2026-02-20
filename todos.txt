@@ -1,3 +1,3 @@
 - `with` statement (know how to do)
 - async functions (know how to do)
-- async iterators (should stay the same if we don't care about > 3.10)
+- async iterators (should stay the same if we don't care about > 3.10) -- kek done on phone
