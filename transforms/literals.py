@@ -2,21 +2,21 @@ import ast
 from utils import Context, Handle, Pure, TransformFunc
 
 
-@Pure
 @Handle(ast.Constant)
+@Pure
 def handle_constant(node: ast.Constant, transform: TransformFunc, ctx: Context):
     return repr(node.value)
 
 
-@Pure
 @Handle(ast.List)
+@Pure
 def handle_list(node: ast.List, transform: TransformFunc, ctx: Context):
     elts = ", ".join(transform(elt) for elt in node.elts)
     return f"[{elts}]"
 
 
-@Pure
 @Handle(ast.Tuple)
+@Pure
 def handle_tuple(node: ast.Tuple, transform: TransformFunc, ctx: Context):
     elts = ", ".join(transform(elt) for elt in node.elts)
     if len(node.elts) == 1:
@@ -24,8 +24,8 @@ def handle_tuple(node: ast.Tuple, transform: TransformFunc, ctx: Context):
     return f"({elts})"
 
 
-@Pure
 @Handle(ast.Dict)
+@Pure
 def handle_dict(node: ast.Dict, transform: TransformFunc, ctx: Context):
     items = ", ".join(
         f"{transform(k)}: {transform(v)}" if k else f"**{transform(v)}" for k, v in zip(node.keys, node.values)
@@ -33,15 +33,15 @@ def handle_dict(node: ast.Dict, transform: TransformFunc, ctx: Context):
     return f"{{{items}}}"
 
 
-@Pure
 @Handle(ast.Set)
+@Pure
 def handle_set(node: ast.Set, transform: TransformFunc, ctx: Context):
     elts = ", ".join(transform(elt) for elt in node.elts)
     return f"{{{elts}}}"
 
 
-@Pure
 @Handle(ast.comprehension)
+@Pure
 def handle_comprehension(
     node: ast.comprehension, transform: TransformFunc, ctx: Context
 ):
@@ -51,8 +51,8 @@ def handle_comprehension(
     return f"for {target} in {iter_} {ifs}"
 
 
-@Pure
 @Handle(ast.GeneratorExp, ast.ListComp, ast.SetComp)
+@Pure
 def handle_generator_exp(
     node: ast.GeneratorExp | ast.ListComp | ast.SetComp,
     transform: TransformFunc,
@@ -70,8 +70,8 @@ def handle_generator_exp(
     return f"{brackets[0]}{elt} {comprehensions}{brackets[1]}"
 
 
-@Pure
 @Handle(ast.DictComp)
+@Pure
 def handle_dict_comp(
     node: ast.DictComp,
     transform: TransformFunc,
@@ -88,7 +88,7 @@ def handle_dict_comp(
 def _handle_format_spec(node: ast.JoinedStr, transform: TransformFunc) -> str:
     parts = []
     for part in node.values:
-        if isinstance(part, ast.Constant):
+        if isinstance(part, ast.Constant) and isinstance(part.value, str):
             value = part.value
             value = value.replace("\\", "\\\\")
             value = value.replace("'", "\\'")
@@ -120,23 +120,24 @@ def _handle_formatted_value_inner(node: ast.FormattedValue, transform: Transform
     return result
 
 
-@Pure
 @Handle(ast.JoinedStr)
+@Pure
 def handle_joined_str(node: ast.JoinedStr, transform: TransformFunc, ctx: Context):
     parts = []
     for part in node.values:
-        if isinstance(part, ast.Constant):
+        if isinstance(part, ast.Constant) and isinstance(part.value, str):
             value = part.value.replace("{", "{{").replace("}", "}}")
             parts.append(value)
         elif isinstance(part, ast.FormattedValue):
             parts.append(_handle_formatted_value_inner(part, transform))
         else:
             raise ValueError(f"Unexpected node inside JoinedStr: {type(part).__name__}")
-    return f'f"{parts[0]}"' if len(parts) == 1 else f'f"{"".join(parts)}"'
+    # return f'f"{parts[0]}"' if len(parts) == 1 else f'f"{"".join(parts)}"'
+    return f'f"{"".join(parts)}"'
 
 
-@Pure
 @Handle(ast.FormattedValue)
+@Pure
 def handle_formatted_value(node: ast.FormattedValue, transform: TransformFunc, ctx: Context):
     return _handle_formatted_value_inner(node, transform)
     

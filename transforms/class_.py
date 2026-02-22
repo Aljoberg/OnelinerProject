@@ -23,7 +23,7 @@ def handle_classdef(node: ast.ClassDef, transform: TransformFunc, ctx: Context):
     ctx.class_dict_var = prev_class_dict_var
     body = ", ".join(transform(stmt) for stmt in node.body)
 
-    cls = f"__import__('types').new_class({node.name!r}, ({bases}), {{{kwds_code}}}, lambda {ctx.class_dict_var}: {body})"
+    cls = f"__import__('types').new_class({node.name!r}, ({bases}), {{{kwds_code}}}, lambda {ctx.class_dict_var}: [{body}])"
 
     for decorator in node.decorator_list:
         cls = f"({transform(decorator)})({cls})"

@@ -38,20 +38,20 @@ _UNARY_OP_MAP: dict[type[ast.AST], str] = {
 }
 
 
-@Pure
 @Handle(*_BIN_OP_MAP.keys())
+@Pure
 def bin_op(node: ast.AST, transform: TransformFunc, ctx: Context):
     return _BIN_OP_MAP[type(node)]
 
 
-@Pure
 @Handle(*_COMP_OP_MAP.keys())
+@Pure
 def comp_op(node: ast.AST, transform: TransformFunc, ctx: Context):
     return _COMP_OP_MAP[type(node)]
 
 
-@Pure
 @Handle(*_UNARY_OP_MAP.keys())
+@Pure
 def unary_op(node: ast.AST, transform: TransformFunc, ctx: Context):
     return _UNARY_OP_MAP[type(node)]
 
@@ -81,7 +81,7 @@ def handle_unary_op(node: ast.UnaryOp, transform: TransformFunc, ctx: Context):
     operand_str = transform(node.operand)
     return f"({op_str}{operand_str})"  # TODO parenthesize only when necessary
 
-
+# maybe pure?
 @Handle(ast.BoolOp)
 def handle_bool_op(node: ast.BoolOp, transform: TransformFunc, ctx: Context):
     op_str = "and" if isinstance(node.op, ast.And) else "or"

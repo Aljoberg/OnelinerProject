@@ -94,7 +94,7 @@ def Handle(*stmts: type[T]):
         real_func = (
             func
             if func.is_pure
-            else lambda *args, **kwargs: print("hi", args, kwargs) or prepend(func(*args, **kwargs))
+            else lambda *args, **kwargs: print("hi", args, kwargs) or prepend(func(*args, **kwargs)) # TODO cast type to TransformFunc
         )
         for stmt in stmts:
             stmt_handlers[stmt] = real_func

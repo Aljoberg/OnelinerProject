@@ -1,13 +1,13 @@
 import ast
 from utils import Context, Handle, Pure, TransformFunc, generate_name
 
-@Pure
 @Handle(ast.Expr)
+@Pure
 def handle_expr(node: ast.Expr, transform: TransformFunc, ctx: Context):
     return transform(node.value)
 
-@Pure
 @Handle(ast.Name)
+@Pure
 def handle_name(node: ast.Name, transform: TransformFunc, ctx: Context):
     if isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
         mangled_name = generate_name(prefix=f"__temp_assigment__{node.id}__")
@@ -29,8 +29,8 @@ def handle_attribute(node: ast.Attribute, transform: TransformFunc, ctx: Context
     attr = node.attr
     return f"{value}.{attr}"
 
-@Pure
 @Handle(ast.Pass)
+@Pure
 def handle_pass(node: ast.Pass, transform: TransformFunc, ctx: Context):
     return "None" # or 0, or something
 
@@ -45,8 +45,8 @@ def handle_yield(node: ast.Yield | ast.YieldFrom, transform: TransformFunc, ctx:
         return f"({keyword})"
 
 
-@Pure
 @Handle(ast.Slice)
+@Pure
 def handle_slice(node: ast.Slice, transform: TransformFunc, ctx: Context):
     start = transform(node.lower) if node.lower else ""
     stop = transform(node.upper) if node.upper else ""
