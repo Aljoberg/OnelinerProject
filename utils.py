@@ -1,10 +1,16 @@
 import ast
+import enum
 import itertools
 import keyword
 import string
 from typing import Callable, TypeVar
 
-from attr import dataclass
+from dataclasses import dataclass
+
+class Scope(enum.Enum):
+    MODULE = enum.auto()
+    CLASS = enum.auto()
+    FUNCTION = enum.auto()
 
 @dataclass
 class CurrentFunction:
@@ -18,11 +24,12 @@ class Context:
     in_loop = False
     continue_var = ""
     break_var = ""
-    in_function = False
+    scope = Scope.MODULE
     current_function = CurrentFunction()  # same here
+    class_dict_var = ""  # for class scope, holds the dict where we can store annotations and other class-level info
     global_vars = set[str]()
     nonlocal_vars = set[str]()
-    assignment_temp_vars = dict[str, str]()  # maps variable names to their current temp var for assignment expressions
+    assignment_temp_vars = dict[ast.Name, str]()  # maps variable names to their current temp var for assignment expressions
 
 
 ctx = Context()  # maybe just use class attributes and not an instance

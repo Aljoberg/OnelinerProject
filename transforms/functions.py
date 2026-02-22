@@ -1,5 +1,5 @@
 import ast
-from utils import Context, CurrentFunction, Handle, TransformFunc, generate_name, has_node
+from utils import Context, CurrentFunction, Handle, Scope, TransformFunc, generate_name, has_node
 
 
 @Handle(ast.FunctionDef, ast.AsyncFunctionDef)
@@ -8,7 +8,7 @@ def handle_function_def(
 ):
     # Register global/nonlocal tracking for this function
     prev_current_function = ctx.current_function
-    prev_in_function = ctx.in_function
+    prev_scope = ctx.scope
 
     ctx.current_function = CurrentFunction(name=node.name, has_return=has_node(node, ast.Return))
     
@@ -16,7 +16,7 @@ def handle_function_def(
         ctx.current_function.return_store_var = generate_name(prefix="__return_store_")
         ctx.current_function.return_hit_var = generate_name(prefix="__return_hit_")
     
-    ctx.in_function = True
+    ctx.scope = Scope.FUNCTION
     
     vararg = f"*{node.args.vararg.arg}" if node.args.vararg else ""
     kwarg = f"**{node.args.kwarg.arg}" if node.args.kwarg else ""
@@ -68,14 +68,14 @@ def handle_function_def(
     
 
     ctx.current_function = prev_current_function
-    ctx.in_function = prev_in_function
+    ctx.scope = prev_scope
     
     return f"({node.name} := {', '.join([func_expression, toggle_async, annotations_code])})"
 
 
 @Handle(ast.Return)
 def handle_return(node: ast.Return, transform: TransformFunc, ctx: Context):
-    if ctx.in_function:
+    if ctx.scope == Scope.FUNCTION:
         if node.value:
             value = transform(node.value)
             return f"({ctx.current_function.return_store_var}.__setitem__(0, {value}) or ({ctx.current_function.return_hit_var} := True))"
@@ -87,8 +87,8 @@ def handle_return(node: ast.Return, transform: TransformFunc, ctx: Context):
 
 @Handle(ast.Lambda)
 def handle_lambda(node: ast.Lambda, transform: TransformFunc, ctx: Context):
-    prev_in_function = ctx.in_function
-    ctx.in_function = True
+    prev_scope = ctx.scope
+    ctx.scope = Scope.FUNCTION
     vararg = f"*{node.args.vararg.arg}" if node.args.vararg else ""
     kwarg = f"**{node.args.kwarg.arg}" if node.args.kwarg else ""
     
@@ -111,7 +111,8 @@ def handle_lambda(node: ast.Lambda, transform: TransformFunc, ctx: Context):
 
     pos_args = ", ".join([pos_args, vararg, kw_args, kwarg])
 
-    ctx.in_function = prev_in_function
+    ctx.scope = prev_scope
+    
     return f"(lambda {pos_args}: {body})"
 
 

@@ -74,7 +74,10 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
     result.append("]]")
 
     if orelse:
-        result.append(f", {ctx.break_var} or [{orelse}])")
+        result.append(f", {ctx.break_var} or [{orelse}]")
+    
+    # result.append(f", ({target} := )")
+    # TODO make target available in scope
     result.append(")")
 
     ctx.break_var = prev_break_var

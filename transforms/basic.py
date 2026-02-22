@@ -9,9 +9,9 @@ def handle_expr(node: ast.Expr, transform: TransformFunc, ctx: Context):
 @Pure
 @Handle(ast.Name)
 def handle_name(node: ast.Name, transform: TransformFunc, ctx: Context):
-    if isinstance(node.ctx, ast.Store):
+    if isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
         mangled_name = generate_name(prefix=f"__temp_assigment__{node.id}__")
-        ctx.assignment_temp_vars[node.id] = mangled_name
+        ctx.assignment_temp_vars[node] = mangled_name
         return mangled_name
     return node.id
 
