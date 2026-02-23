@@ -1,6 +1,6 @@
 import ast, builtins, string, itertools, keyword
 from typing import Callable, TypeVar
-from utils import generate_name, stmt_handlers, prepend, ctx
+from utils import generate_name, set_forbidden_names, stmt_handlers, prepend, ctx
 
 sln = ", "
 
@@ -1844,6 +1844,7 @@ def code_to_oneliner(code):
         for i in ast.walk(tree)
         if isinstance(i, (ast.alias, ast.Name))
     }
+    set_forbidden_names(*forbidden_names)
     # global_tree = list(ast.walk(tree))
     # print(tree.body[0].body[0].body[0].parent.parent)
     # sans.func_dict = {}

@@ -19,14 +19,15 @@ def handle_classdef(node: ast.ClassDef, transform: TransformFunc, ctx: Context):
     kwds = {keyword.arg: transform(keyword.value) for keyword in node.keywords}
     kwds_code = ", ".join(f"{key!r}: {value}" for key, value in kwds.items())
 
-    ctx.scope = prev_scope
-    ctx.class_dict_var = prev_class_dict_var
     body = ", ".join(transform(stmt) for stmt in node.body)
 
     cls = f"__import__('types').new_class({node.name!r}, ({bases}), {{{kwds_code}}}, lambda {ctx.class_dict_var}: [{body}])"
 
     for decorator in node.decorator_list:
         cls = f"({transform(decorator)})({cls})"
+        
+    ctx.scope = prev_scope
+    ctx.class_dict_var = prev_class_dict_var
 
     return f"({node.name} := {cls})"
 

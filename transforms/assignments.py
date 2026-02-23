@@ -22,10 +22,11 @@ def choose_assign(node: ast.Name | ast.Attribute | ast.Subscript, value: str, tr
     # i hope that's all of them
     if isinstance(node, ast.Name):
         # direct bind
+        real_name = ctx.assignment_temp_vars.get(node, node.id)
         if ctx.scope == Scope.CLASS:
-            return f"{ctx.class_dict_var}.update({{ {node.id!r}: {value} }}) or ({node.id} := {value})"
+            return f"{ctx.class_dict_var}.update({{{real_name!r}: {value}}}) or ({real_name} := {value})"
         else:
-            return f"{transform(node)} := {value}"
+            return f"{real_name} := {value}"
     elif isinstance(node, ast.Attribute):
         return f"setattr({transform(node.value)}, {node.attr!r}, {value})"
     elif isinstance(node, ast.Subscript):
@@ -79,6 +80,7 @@ def handle_aug_assign(node: ast.AugAssign, transform: TransformFunc, ctx: Contex
 
 @Handle(ast.AnnAssign)
 def handle_ann_assign(node: ast.AnnAssign, transform: TransformFunc, ctx: Context):
+    #TODO returns None for some reason
     if node.simple and isinstance(node.target, ast.Name):
         # simple case, just a variable annotation (with optional value)
         target = node.target
@@ -87,16 +89,19 @@ def handle_ann_assign(node: ast.AnnAssign, transform: TransformFunc, ctx: Contex
             value = transform(node.value)
             if ctx.scope == Scope.MODULE:
                 # can save to __annotations__
-                return f"[({target.id} := {value}), __annotations__.update({{ {target.id!r}: {annotation} }})]"
+                return f"[{choose_assign(target, value, transform, ctx)}, __annotations__.update({{{target.id!r}: {annotation}}})]"
             elif ctx.scope == Scope.CLASS:
                 # can save to __annotations__ of the class dict
-                return f"[({target.id} := {value}), {ctx.class_dict_var}.setdefault('__annotations__', {{}}).update({{ {target.id!r}: {annotation} }})]"
+                return f"[{choose_assign(target, value, transform, ctx)}, {ctx.class_dict_var}.setdefault('__annotations__', {{}}).update({{{target.id!r}: {annotation}}})]"
             # return f"({target.id} := {value})  # type: {annotation}"
+            else:
+                # can't save to __annotations__, just do the assignment and ignore the annotation (PEP 526 allows this)
+                return "(" + choose_assign(target, value, transform, ctx) + ")"
         else:
             if ctx.scope == Scope.MODULE:
-                return f"__annotations__.update({{ {target.id!r}: {annotation} }})"
+                return f"__annotations__.update({{{target.id!r}: {annotation}}})"
             elif ctx.scope == Scope.CLASS:
-                return f"{ctx.class_dict_var}.setdefault('__annotations__', {{}}).update({{ {target.id!r}: {annotation} }})"
+                return f"{ctx.class_dict_var}.setdefault('__annotations__', {{}}).update({{{target.id!r}: {annotation}}})"
             # return f"{target.id}  # type: {annotation}"
     else:
         # no need to save to __annotations__, just do the assignment and ignore the annotation (PEP 526 allows this)

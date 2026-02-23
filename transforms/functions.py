@@ -38,7 +38,7 @@ def handle_function_def(
         for arg, val in zip(node.args.kwonlyargs, node.args.kw_defaults)
     )
 
-    pos_args = ", ".join([pos_args, vararg, kw_args, kwarg])
+    pos_args = ", ".join(filter(None, [pos_args, vararg, kw_args, kwarg]))
     # if vkwargs:
     #     pos_args = pos_args + (", " if pos_args else "") + ", ".join(vkwargs)
 
@@ -66,11 +66,14 @@ def handle_function_def(
     for decorator in node.decorator_list:
         func_expression = f"({transform(decorator)})({func_expression})"
     
+    final_expr = ', '.join(filter(None, [func_expression, toggle_async, annotations_code]))
 
     ctx.current_function = prev_current_function
     ctx.scope = prev_scope
     
-    return f"({node.name} := {', '.join([func_expression, toggle_async, annotations_code])})"
+    if ctx.scope == Scope.CLASS:
+        return f"{ctx.class_dict_var}.update({{{node.name!r}: {final_expr}}}) or ({node.name} := {final_expr})"
+    return f"({node.name} := {final_expr})"
 
 
 @Handle(ast.Return)
