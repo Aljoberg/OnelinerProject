@@ -1,6 +1,6 @@
 import ast
 from utils import Context, CurrentFunction, Handle, Scope, TransformFunc, generate_name, has_node
-
+# TODO all .update or (...:=...) repeats value twice
 
 @Handle(ast.FunctionDef, ast.AsyncFunctionDef)
 def handle_function_def(
@@ -63,16 +63,16 @@ def handle_function_def(
     body_code = f"[{return_store}{body}{f', {ctx.current_function.return_store_var}[0]' if ctx.current_function.has_return else ', None'}][-1]"
     func_expression = f"lambda{(' ' + pos_args) if pos_args else ''}: {body_code}"
     
+    ctx.current_function = prev_current_function
+    ctx.scope = prev_scope
+
     for decorator in node.decorator_list:
         func_expression = f"({transform(decorator)})({func_expression})"
     
     final_expr = ', '.join(filter(None, [func_expression, toggle_async, annotations_code]))
-
-    ctx.current_function = prev_current_function
-    ctx.scope = prev_scope
     
     if ctx.scope == Scope.CLASS:
-        return f"{ctx.class_dict_var}.update({{{node.name!r}: {final_expr}}}) or ({node.name} := {final_expr})"
+        return f"[({node.name} := {final_expr}), {ctx.class_dict_var}.update({{{node.name!r}: {final_expr}}})]"
     return f"({node.name} := {final_expr})"
 
 
