@@ -68,7 +68,7 @@ def handle_slice(node: ast.Slice, transform: TransformFunc, ctx: Context):
         return f"{start}:{stop}"
 
 
-@Handle(ast.Global)
+@Handle(ast.Global) # maybe pure? 
 def handle_global(node: ast.Global, transform: TransformFunc, ctx: Context):
     ctx.global_vars.update(node.names)
     return "None"
@@ -77,4 +77,5 @@ def handle_global(node: ast.Global, transform: TransformFunc, ctx: Context):
 @Handle(ast.Nonlocal)
 def handle_nonlocal(node: ast.Nonlocal, transform: TransformFunc, ctx: Context):
     ctx.nonlocal_vars.update(node.names)
-    return ", ".join(node.names)
+    # return ", ".join(node.names)
+    return "None"

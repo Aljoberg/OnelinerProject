@@ -313,11 +313,50 @@ def handle_try(node: ast.Try, transform: TransformFunc, ctx: Context):
 
 
 def transform_pattern(
-    pattern, subject: str, transform: TransformFunc, ctx: Context, is_nested=False
+    pattern: ast.pattern, subject: str, transform: TransformFunc, ctx: Context
 ):
-    # TODO implement patterns
+    
+    
+    
+    if isinstance(pattern, ast.MatchOr):
+        return " or ".join(transform_pattern(p, subject, transform, ctx) for p in pattern.patterns)
+    elif isinstance(pattern, ast.MatchAs):
+        name = pattern.name or "_"
+        as_condition = (
+            transform_pattern(pattern.pattern, subject, transform, ctx)
+            if pattern.pattern
+            else "True"
+        )
+        return (
+            f"{as_condition} and ({name} := {subject})"
+            if pattern.pattern
+            else f"({name} := {subject})"
+        )
+    elif isinstance(pattern, ast.MatchValue):
+        comparison_value = transform(pattern.value)
+        op = "is" if isinstance(pattern.value, ast.Constant) and pattern.value.value in (None, True, False) else "=="
+        return f"{subject} {op} {comparison_value}"
+    elif isinstance(pattern, ast.MatchSequence):
+        collections_var = generate_name(prefix="__collections_")
+        is_fixed_length = not has_node(pattern, ast.MatchStar)
+        parts = [f"isinstance({subject}, (({collections_var} := __import__('collections')).abc.Sequence, __import__('array').array, {collections_var}.deque, list, memoryview, range, tuple) and not isinstance({subject}, (str, bytes, bytearray)) )"]
+        if is_fixed_length:
+            parts.append(f"len({subject}) == {len(pattern.patterns)}")
+            parts += [
+                transform_pattern(el, f"{subject}[{i}]", transform, ctx)
+                for i, el in enumerate(pattern.patterns)
+            ]
+        else:
+            non_star = [(i, el) for i, el in enumerate(pattern.patterns) if not isinstance(el, ast.MatchStar)]
+            parts.append(f"len({subject}) >= {len(non_star)}")
+        return " and ".join(parts)
+    # elif isinstance(pattern, ast.MatchSingleton):
+    #     comparison_value = repr(pattern.value)
+    #     return f"{subject} is {comparison_value}"
 
-    pass
+    # elif isinstance(pattern, ast.Match)
+
+    return "Hi"
     # from utils import generate_name
 
     # if isinstance(pattern, ast.MatchValue):
@@ -390,7 +429,8 @@ def transform_pattern(
     #             raise NotImplementedError(
     #                 f"Attribute pattern type {type(attr_pattern)} not implemented in MatchClass"
     #             )
-    #     instance_check = f"isinstance({subject}, {cls_name})"
+    #     instance_check = f"i    # def transform_case(case: ast.match_case):
+# sinstance({subject}, {cls/_name})"
     #     attribute_conditions.append("True")
     #     combined_conditions = " and ".join(attribute_conditions + keyword_patterns)
     #     return f"{instance_check} and ({combined_conditions})"
@@ -465,8 +505,14 @@ def transform_pattern(
 
 @Handle(ast.Match)
 def handle_match(node: ast.Match, transform: TransformFunc, ctx: Context):
-    # TODO
-    raise NotImplementedError("Match statements not implemented yet")
+    # uh oh
+    subject = transform(node.subject)
+    
+    subject_var = generate_name(prefix="__match_subject_")
+
+    cases = ", ".join(transform_pattern(case.pattern, subject_var, transform, ctx) for case in node.cases)
+
+    return f"[({subject_var} := {subject}), {cases}]"
     # subject = transform(node.subject)
 
     # def transform_case(case: ast.match_case):

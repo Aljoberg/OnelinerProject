@@ -27,6 +27,17 @@ def choose_assign(node: ast.Name | ast.Attribute | ast.Subscript, value: str, tr
         real_name = node.id
         # real_name = ctx.assignment_temp_vars[node]
         print(real_name)
+
+        if real_name in ctx.global_vars:
+            return f"globals().update({{{real_name!r}: {value}}})"
+        elif real_name in ctx.nonlocal_vars:
+            # TODO make readable
+            ctypes_var = generate_name(prefix="__ctypes_")
+            pycellset_var = generate_name(prefix="__pycellset_")
+            pyobject_var = generate_name(prefix="__pyobject_")
+            item_var = generate_name(prefix="__item_")
+            return f"(lambda {ctypes_var}, {item_var}: setattr({pycellset_var} := {ctypes_var}.pythonapi.PyCell_Set, 'argtypes', [{pyobject_var} := {ctypes_var}.py_object, {pyobject_var}]) or {pycellset_var}({item_var}, {pyobject_var}({value})))(__import__('ctypes'), {ctx.current_function.name}.__closure__[{ctx.current_function.name}.__code__.co_freevars.index({real_name!r})])"
+
         if ctx.scope == Scope.CLASS:
             return f"{ctx.class_dict_var}.update({{{real_name!r}: {value}}}) or ({real_name} := {value})"
         else:
@@ -65,7 +76,7 @@ def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
             unpacked = transform(target)
             names = ", ".join(choose_assign(var, mangled, transform, ctx) for var, mangled in ctx.assignment_temp_vars.items())
 
-            out.append(f"[{names}] for {unpacked} in {tmp_val}]")
+            out.append(f"[[{names}] for {unpacked} in {tmp_val}]")
 
         return f"[{', '.join(out)}]"
 
