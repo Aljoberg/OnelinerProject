@@ -7,3 +7,5 @@ def hello():
     return "Hello, World!"
 
 app.run()
+
+(a, b.c, d[e]) = 1, 2, 3

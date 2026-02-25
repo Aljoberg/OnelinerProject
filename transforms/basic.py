@@ -11,6 +11,7 @@ def handle_expr(node: ast.Expr, transform: TransformFunc, ctx: Context):
 def handle_name(node: ast.Name, transform: TransformFunc, ctx: Context):
     if isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
         mangled_name = generate_name(prefix=f"__temp_assigment__{node.id}__")
+        print("added to names", node, ctx.assignment_temp_vars)
         ctx.assignment_temp_vars[node] = mangled_name
         return mangled_name
     return node.id
@@ -20,6 +21,10 @@ def handle_name(node: ast.Name, transform: TransformFunc, ctx: Context):
 def handle_subscript(node: ast.Subscript, transform: TransformFunc, ctx: Context):
     value = transform(node.value)
     slice_ = transform(node.slice)
+    if isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
+        mangled_name = generate_name(prefix=f"__temp_subscript_assignment__{value}_{slice_}__")
+        ctx.assignment_temp_vars[node] = mangled_name
+        return mangled_name
     return f"{value}[{slice_}]"
 
 
@@ -27,6 +32,10 @@ def handle_subscript(node: ast.Subscript, transform: TransformFunc, ctx: Context
 def handle_attribute(node: ast.Attribute, transform: TransformFunc, ctx: Context):
     value = transform(node.value)
     attr = node.attr
+    if isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
+        mangled_name = generate_name(prefix=f"__temp_attr_assignment__{value}_{attr}__")
+        ctx.assignment_temp_vars[node] = mangled_name
+        return mangled_name
     return f"{value}.{attr}"
 
 @Handle(ast.Pass)

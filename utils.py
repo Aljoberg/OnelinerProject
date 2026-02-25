@@ -60,6 +60,7 @@ DEBUG = False  # for prefixes and logs, i suppose
 forbidden_names = set()
 
 def set_forbidden_names(*names: str): # this is weird
+    print(names, "forbidden names")
     forbidden_names.update(names)
 
 def generate_names(n=1, prefix=""):

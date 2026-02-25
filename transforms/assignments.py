@@ -22,7 +22,11 @@ def choose_assign(node: ast.Name | ast.Attribute | ast.Subscript, value: str, tr
     # i hope that's all of them
     if isinstance(node, ast.Name):
         # direct bind
-        real_name = ctx.assignment_temp_vars.get(node, node.id)
+        print(ctx.assignment_temp_vars, "assignment temp vars")
+        # real_name = ctx.assignment_temp_vars.get(node, node.id)
+        real_name = node.id
+        # real_name = ctx.assignment_temp_vars[node]
+        print(real_name)
         if ctx.scope == Scope.CLASS:
             return f"{ctx.class_dict_var}.update({{{real_name!r}: {value}}}) or ({real_name} := {value})"
         else:
@@ -30,7 +34,7 @@ def choose_assign(node: ast.Name | ast.Attribute | ast.Subscript, value: str, tr
     elif isinstance(node, ast.Attribute):
         return f"setattr({transform(node.value)}, {node.attr!r}, {value})"
     elif isinstance(node, ast.Subscript):
-        return f"{transform(node.value)}.__setitem__({transform(node.slice)!r}, {value})"
+        return f"{transform(node.value)}.__setitem__({transform(node.slice)}, {value})"
     else:
         raise SyntaxError("????")
 
@@ -38,6 +42,7 @@ def choose_assign(node: ast.Name | ast.Attribute | ast.Subscript, value: str, tr
 def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
     ctx.assignment_temp_vars.clear()  # clear temp vars for this assignment
     value = transform(node.value)
+    print(node.targets)
     if all(not isinstance(i, (ast.Tuple, ast.List)) for i in node.targets):
         # no unpacking
         if len(node.targets) == 1:
