@@ -401,17 +401,21 @@ def transform_pattern(
         return " and ".join(parts)
     elif isinstance(pattern, ast.MatchStar):
         if pattern.name:
-            return f"({pattern.name} := {subject})" # TODO if subject is falsey, this will fail
+            return f"({pattern.name} := {subject})"  # TODO if subject is falsey, this will fail
         else:
             return "True"
     elif isinstance(pattern, ast.MatchMapping):
         # TODO find out how rest parameter works
-        parts = [f"isinstance({subject}, (__import__('collections').abc.Mapping, dict, type(type.__dict__)))"]
+        parts = [
+            f"isinstance({subject}, (__import__('collections').abc.Mapping, dict, type(type.__dict__)))"
+        ]
         for key, value_pattern in zip(pattern.keys, pattern.patterns):
             transformed_key = transform(key)
-            value_subject = f"{subject}.get({transformed_key}, None)" 
+            value_subject = f"{subject}.get({transformed_key}, None)"
             parts.append(f"{transformed_key} in {subject}")
-            parts.append(transform_pattern(value_pattern, value_subject, transform, ctx))
+            parts.append(
+                transform_pattern(value_pattern, value_subject, transform, ctx)
+            )
         if pattern.rest:
             rest_subject = f"{{k: v for k, v in {subject}.items() if k not in {{{', '.join(transform(key) for key in pattern.keys)}}}}}"
             parts.append(f"({pattern.rest} := {rest_subject})")
@@ -420,7 +424,21 @@ def transform_pattern(
         # uh oh
         # we're trusting the user to make it a class, we're not raising TypeError if it's not an instance of type
         parts = [f"isinstance({subject}, {transform(pattern.cls)})"]
-        # TODO
+        # TODO support special types
+        if pattern.patterns:
+            match_args_var = generate_name(prefix="__match_args_")
+            parts.append(
+                f"({match_args_var} := getattr({subject}, '__match_args__', None))"
+            )
+            for i, attr_pattern in enumerate(pattern.patterns):
+                # we won't be raising errors, we trust the user
+                attr_subject = f"{match_args_var}[{i}]"
+                parts.append(
+                    transform_pattern(attr_pattern, attr_subject, transform, ctx)
+                )
+        for kwd_attr, kwd_pattern in zip(pattern.kwd_attrs, pattern.kwd_patterns):
+            attr_subject = f"getattr({subject}, {kwd_attr!r}, None)"
+            parts.append(transform_pattern(kwd_pattern, attr_subject, transform, ctx))
         return " and ".join(parts)
     # elif isinstance(pattern, ast.MatchSingleton):
     #     comparison_value = repr(pattern.value)
@@ -585,7 +603,7 @@ def handle_match(node: ast.Match, transform: TransformFunc, ctx: Context):
     subject_var = generate_name(prefix="__match_subject_")
 
     cases = ", ".join(
-        transform_pattern(case.pattern, subject_var, transform, ctx)
+        f"([{', '.join(transform(stmt) for stmt in case.body)}] if ({transform_pattern(case.pattern, subject_var, transform, ctx)}){f' and ({transform(case.guard)})' if case.guard else ''} else None)"  # TODO we don't need an if expr
         for case in node.cases
     )
 
