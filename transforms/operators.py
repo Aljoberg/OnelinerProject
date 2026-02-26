@@ -81,8 +81,9 @@ def handle_unary_op(node: ast.UnaryOp, transform: TransformFunc, ctx: Context):
     operand_str = transform(node.operand)
     return f"({op_str}{operand_str})"  # TODO parenthesize only when necessary
 
-# maybe pure?
+
 @Handle(ast.BoolOp)
+@Pure
 def handle_bool_op(node: ast.BoolOp, transform: TransformFunc, ctx: Context):
     op_str = "and" if isinstance(node.op, ast.And) else "or"
     return f" {op_str} ".join(

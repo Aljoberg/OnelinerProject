@@ -1,4 +1,5 @@
 import ast
+from copy import deepcopy
 from utils import Handle, Scope, TransformFunc, generate_name, Context, has_node
 
 
@@ -83,20 +84,20 @@ def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
 @Handle(ast.AugAssign)
 def handle_aug_assign(node: ast.AugAssign, transform: TransformFunc, ctx: Context):
     # name = name op value
+    left = deepcopy(node.target)
+    left.ctx = ast.Load()  # treat target as load to get the current value
     assignment = ast.Assign(
         targets=[node.target],
         value=ast.BinOp(
-            left=node.target,
+            left=left,
             op=node.op,
             right=node.value
         )
     )
     return transform(assignment)
-#     return NotImplemented # TODO implement this
 
 @Handle(ast.AnnAssign)
 def handle_ann_assign(node: ast.AnnAssign, transform: TransformFunc, ctx: Context):
-    #TODO returns None for some reason
     if node.simple and isinstance(node.target, ast.Name):
         # simple case, just a variable annotation (with optional value)
         target = node.target
@@ -128,6 +129,7 @@ def handle_ann_assign(node: ast.AnnAssign, transform: TransformFunc, ctx: Contex
             )
             return transform(assignment)
 
+    raise SyntaxError("Unrealistic annotated assignment")
 
 
 @Handle(ast.NamedExpr)

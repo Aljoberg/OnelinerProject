@@ -56,7 +56,7 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
 
     orelse_statements = [
         f"({transform(stmt)})" for stmt in node.orelse
-    ]  # TODO make orelse
+    ]
     orelse = ", ".join(orelse_statements) if orelse_statements else None
 
     result: list[str] = ["(["]
@@ -112,7 +112,7 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
 
     orelse_statements = [
         f"({transform(stmt)})" for stmt in node.orelse
-    ]  # TODO make orelse
+    ]
     orelse = ", ".join(orelse_statements) if orelse_statements else None
 
     result: list[str] = ["["]
@@ -336,13 +336,13 @@ def transform_pattern(
             f"{as_condition} and ({name} := {subject})"
             if pattern.pattern
             else f"({name} := {subject})"
-        )
+        ) # TODO subject can be falsey
     elif isinstance(pattern, ast.MatchValue):
         comparison_value = transform(pattern.value)
         op = (
             "is"
             if isinstance(pattern.value, ast.Constant)
-            and pattern.value.value in (None, True, False)
+            and any(pattern.value.value is x for x in (None, True, False))
             else "=="
         )
         return f"{subject} {op} {comparison_value}"
@@ -350,7 +350,7 @@ def transform_pattern(
         collections_var = generate_name(prefix="__collections_")
         is_fixed_length = not has_node(pattern, ast.MatchStar)
         parts = [
-            f"isinstance({subject}, (({collections_var} := __import__('collections')).abc.Sequence, __import__('array').array, {collections_var}.deque, list, memoryview, range, tuple) and not isinstance({subject}, (str, bytes, bytearray)) )"
+            f"isinstance({subject}, (({collections_var} := __import__('collections', fromlist=('abc', 'deque'))).abc.Sequence, __import__('array').array, {collections_var}.deque, list, memoryview, range, tuple)) and not isinstance({subject}, (str, bytes, bytearray))"
         ]
         if is_fixed_length:
             parts.append(f"len({subject}) == {len(pattern.patterns)}")
@@ -407,7 +407,7 @@ def transform_pattern(
     elif isinstance(pattern, ast.MatchMapping):
         # TODO find out how rest parameter works
         parts = [
-            f"isinstance({subject}, (__import__('collections').abc.Mapping, dict, type(type.__dict__)))"
+            f"isinstance({subject}, (__import__('collections', fromlist=('abc',)).abc.Mapping, dict, type(type.__dict__)))"
         ]
         for key, value_pattern in zip(pattern.keys, pattern.patterns):
             transformed_key = transform(key)
@@ -428,16 +428,18 @@ def transform_pattern(
         if pattern.patterns:
             match_args_var = generate_name(prefix="__match_args_")
             parts.append(
-                f"({match_args_var} := getattr({subject}, '__match_args__', None))"
+                f"({match_args_var} := getattr({subject}, '__match_args__', ()))"
             )
             for i, attr_pattern in enumerate(pattern.patterns):
                 # we won't be raising errors, we trust the user
-                attr_subject = f"{match_args_var}[{i}]"
+                attr_subject = f"getattr({subject}, {match_args_var}[{i}])"
+                parts.append(f"hasattr({subject}, {match_args_var}[{i}])")
                 parts.append(
                     transform_pattern(attr_pattern, attr_subject, transform, ctx)
                 )
         for kwd_attr, kwd_pattern in zip(pattern.kwd_attrs, pattern.kwd_patterns):
-            attr_subject = f"getattr({subject}, {kwd_attr!r}, None)"
+            attr_subject = f"getattr({subject}, {kwd_attr!r})"
+            parts.append(f"hasattr({subject}, {kwd_attr!r})")
             parts.append(transform_pattern(kwd_pattern, attr_subject, transform, ctx))
         return " and ".join(parts)
     # elif isinstance(pattern, ast.MatchSingleton):

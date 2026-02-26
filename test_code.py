@@ -1,11 +1,24 @@
-from flask import Flask
+# class Test:
+#     __match_args__ = ("a",)
+#     def __init__(self):
+#         self.a = 5
 
-app = Flask(__name__)
+# test = Test()
+# print(test.a)
 
-@app.route("/")
-def hello():
-    return "Hello, World!"
+# match test:
+#     case Test(a):
+#         print(100, a)
 
-app.run()
+def outer():
+    a = 5
+    def inner():
+        nonlocal a
+        a += 1
+        return a
+    
+    print(a)
+    print(inner())
+    print(a)
 
-(a, b.c, d[e]) = 1, 2, 3
+outer()

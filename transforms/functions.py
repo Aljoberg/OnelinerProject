@@ -60,7 +60,7 @@ def handle_function_def(
         annotations_code = f"{node.name}.__annotations__.update({{{', '.join(f'{key!r}: {value}' for key, value in annotations.items())}}})"
     
     return_store = f"({ctx.current_function.return_store_var} := [None]), ({ctx.current_function.return_hit_var} := False), " if ctx.current_function.has_return else ""
-    body_code = f"[{return_store}{body}{f', {ctx.current_function.return_store_var}[0]' if ctx.current_function.has_return else ', None'}][-1]"
+    body_code = f"[{return_store}{body}{f', {ctx.current_function.return_store_var}[-1]' if ctx.current_function.has_return else ', None'}][-1]"
     func_expression = f"lambda{(' ' + pos_args) if pos_args else ''}: {body_code}"
     
     ctx.current_function = prev_current_function
@@ -72,7 +72,7 @@ def handle_function_def(
     final_expr = ', '.join(filter(None, [func_expression, toggle_async, annotations_code]))
     
     if ctx.scope == Scope.CLASS:
-        return f"[({node.name} := {final_expr}), {ctx.class_dict_var}.update({{{node.name!r}: {final_expr}}})]"
+        return f"[({node.name} := {final_expr}), {ctx.class_dict_var}.update({{{node.name!r}: {node.name}}})]"
     return f"({node.name} := {final_expr})"
 
 
@@ -81,7 +81,7 @@ def handle_return(node: ast.Return, transform: TransformFunc, ctx: Context):
     if ctx.scope == Scope.FUNCTION:
         if node.value:
             value = transform(node.value)
-            return f"({ctx.current_function.return_store_var}.__setitem__(0, {value}) or ({ctx.current_function.return_hit_var} := True))"
+            return f"({ctx.current_function.return_store_var}.append({value}) or ({ctx.current_function.return_hit_var} := True))"
         else:
             return f"({ctx.current_function.return_hit_var} := True)"
     else:
