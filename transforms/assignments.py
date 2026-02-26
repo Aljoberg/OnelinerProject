@@ -73,11 +73,11 @@ def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
         else:
             tmp_val = value
 
-        for target in node.targets:
-            unpacked = transform(target) # TODO strip parentheses from transform(target) if it added any, to avoid double parentheses in the generated code
+        for target in node.targets: # TODO lift up this & tmp_val if has_walrus or len(node.targets) > 1
+            unpacked = transform(target)
             names = ", ".join(choose_assign(var, mangled, transform, ctx) for var, mangled in ctx.assignment_temp_vars.items())
 
-            out.append(f"[[{names}] for {unpacked} in {tmp_val}]")
+            out.append(f"[[{names}] for {unpacked} in [{tmp_val}]]")
 
         return f"[{', '.join(out)}]"
 
