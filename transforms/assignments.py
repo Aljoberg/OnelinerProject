@@ -74,7 +74,7 @@ def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
             tmp_val = value
 
         for target in node.targets:
-            unpacked = transform(target)
+            unpacked = transform(target) # TODO strip parentheses from transform(target) if it added any, to avoid double parentheses in the generated code
             names = ", ".join(choose_assign(var, mangled, transform, ctx) for var, mangled in ctx.assignment_temp_vars.items())
 
             out.append(f"[[{names}] for {unpacked} in {tmp_val}]")

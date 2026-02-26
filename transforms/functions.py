@@ -96,8 +96,8 @@ def handle_lambda(node: ast.Lambda, transform: TransformFunc, ctx: Context):
     kwarg = f"**{node.args.kwarg.arg}" if node.args.kwarg else ""
     
     
-    body_statements = transform(node.body)
-    body = ", ".join(body_statements)
+    body = transform(node.body)
+    # body = ", ".join(body)
     
     pos_args = ", ".join(
         f"{arg.arg}{f'={transform(val)}' if val else ''}"
@@ -112,7 +112,7 @@ def handle_lambda(node: ast.Lambda, transform: TransformFunc, ctx: Context):
         for arg, val in zip(node.args.kwonlyargs, node.args.kw_defaults)
     )
 
-    pos_args = ", ".join([pos_args, vararg, kw_args, kwarg])
+    pos_args = ", ".join(filter(None, [pos_args, vararg, kw_args, kwarg]))
 
     ctx.scope = prev_scope
     
