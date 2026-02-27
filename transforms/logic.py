@@ -184,39 +184,11 @@ def handle_assert(node: ast.Assert, transform: TransformFunc, ctx: Context):
     return f"{test} or (_ for _ in ()).throw(AssertionError({msg}))"
 
 
-@Handle(ast.With, ast.AsyncWith)
-def handle_with(node: ast.With | ast.AsyncWith, transform: TransformFunc, ctx: Context):
-    # TODO
-    if len(node.items) > 1:
-        if isinstance(node, ast.AsyncWith):
-            inner_with = ast.AsyncWith(
-                items=node.items[1:],
-                body=node.body,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-            outer_with = ast.AsyncWith(
-                items=[node.items[0]],
-                body=[inner_with],
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-        else:
-            inner_with = ast.With(
-                items=node.items[1:],
-                body=node.body,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-            outer_with = ast.With(
-                items=[node.items[0]],
-                body=[inner_with],
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-        return transform(outer_with)
-
-    item = node.items[0]
+def handle_with_item(items: list[ast.withitem], i: int, body: str, transform: TransformFunc, *, is_async: bool):
+    if i <= len(items):
+        return body
+    
+    item = items[i]
     manager_var = generate_name(prefix="__with_manager_")
     enter_var = generate_name(prefix="__with_enter_")
     exit_var = generate_name(prefix="__with_exit_")
@@ -224,12 +196,13 @@ def handle_with(node: ast.With | ast.AsyncWith, transform: TransformFunc, ctx: C
     hit_except_var = generate_name(prefix="__with_hit_")
 
     context_expr = transform(item.context_expr)
-    is_async = isinstance(node, ast.AsyncWith)
+    # is_async = isinstance(node, ast.AsyncWith)
     enter_method = "__aenter__" if is_async else "__enter__"
     exit_method = "__aexit__" if is_async else "__exit__"
 
-    body_statements = [f"({transform(stmt)})" for stmt in node.body]
-    body = ", ".join(body_statements)
+    # body_statements = [f"({transform(stmt)})" for stmt in node.body]
+    # body = ", ".join(body_statements)
+    body = handle_with_item(items, i + 1, body, transform, is_async=is_async)
 
     target_code = ""
     if item.optional_vars:
@@ -238,16 +211,32 @@ def handle_with(node: ast.With | ast.AsyncWith, transform: TransformFunc, ctx: C
         elif isinstance(item.optional_vars, (ast.Tuple, ast.List)):
             target_code = f"{transform(item.optional_vars)} := {value_var}, "
 
-    with_code = f"""(
-{manager_var} := {context_expr},
-{enter_var} := type({manager_var}).{enter_method},
-{exit_var} := type({manager_var}).{exit_method},
-{value_var} := {enter_var}({manager_var}),
-{hit_except_var} := False,
-{target_code}[{body} for _ in [0]]
-)[-1]"""
+    preparation = f"[{manager_var} := ({context_expr}), {exit_var} := {manager_var}.{enter_method}, {value_var} := {manager_var}.{enter_method}()]"
+
+    try_stmt = ... # TODO lol
+#     with_code = f"""(
+# {manager_var} := {context_expr},
+# {enter_var} := type({manager_var}).{enter_method},
+# {exit_var} := type({manager_var}).{exit_method},
+# {value_var} := {enter_var}({manager_var}),
+# {hit_except_var} := False,
+# {target_code}[{body} for _ in [0]]
+# )[-1]"""
+
+    with_code = ""
 
     return with_code
+
+@Handle(ast.With, ast.AsyncWith)
+def handle_with(node: ast.With | ast.AsyncWith, transform: TransformFunc, ctx: Context):
+    # TODO
+    body_statements = [f"({transform(stmt)})" for stmt in node.body]
+    body = ", ".join(body_statements)
+    
+    return handle_with_item(node.items, 0, body, transform, is_async=isinstance(node, ast.AsyncWith))
+
+
+    
 
 
 @Handle(ast.Try)

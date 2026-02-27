@@ -155,6 +155,18 @@ def handle_named_expr(node: ast.NamedExpr, transform: TransformFunc, ctx: Contex
 
 @Handle(ast.Delete)
 def handle_delete(node: ast.Delete, transform: TransformFunc, ctx: Context):
-    # TODO
-    items = ", ".join(f"({transform(i)})" for i in node.targets)
-    return f"exec({repr(f'del {items}')}, globals(), locals())"
+    out = []
+    for target in node.targets:
+        if isinstance(target, ast.Name):
+            out.append(f"exec({repr(f'del {target.id}')})") # TODO
+        elif isinstance(target, ast.Attribute):
+            obj = transform(target.value)
+            attr = target.attr
+            out.append(f"delattr({obj}, {attr!r})")
+        elif isinstance(target, ast.Subscript):
+            obj = transform(target.value)
+            key = transform(target.slice)
+            out.append(f"{obj}.__delitem__({key})")
+    
+
+    return f"[{', '.join(out)}]"
