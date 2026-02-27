@@ -4,6 +4,7 @@ from utils import (
     Context,
     Handle,
     TransformFunc,
+    ensure_assign,
     generate_names,
     has_node,
     generate_name,
@@ -20,7 +21,7 @@ def handle_if(node: ast.If, transform: TransformFunc, ctx: Context):
     orelse_statements = [transform(stmt) for stmt in node.orelse]
     orelse = ", ".join(orelse_statements) if orelse_statements else None
     if orelse:
-        return f"([{body}] if ({test}) else [{orelse}])"  # TODO maybe change [] to () because tuple looks cooler
+        return f"([{body}] if ({test}) else [{orelse}])"
     else:
         return f"({test} and {body})"
 
@@ -50,13 +51,10 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
         ctx.continue_var = continue_var
 
     iter_ = transform(node.iter)
-    target = transform(node.target)
     body_statements = [f"({transform(stmt)})" for stmt in node.body]
     body = ", ".join(body_statements)
 
-    orelse_statements = [
-        f"({transform(stmt)})" for stmt in node.orelse
-    ]
+    orelse_statements = [f"({transform(stmt)})" for stmt in node.orelse]
     orelse = ", ".join(orelse_statements) if orelse_statements else None
 
     result: list[str] = ["(["]
@@ -65,6 +63,20 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
         result.append(f"({ctx.break_var} := False), ")
 
     result.append("[[")
+    print(ctx.assignment_temp_vars)
+    ctx.assignment_temp_vars.clear()
+    prev_should = ctx.should_assign_nonnames_to_temp
+    ctx.should_assign_nonnames_to_temp = False
+    target = transform(node.target)
+    ctx.should_assign_nonnames_to_temp = prev_should
+    print(ctx.assignment_temp_vars)
+    target_assigns = ", ".join(
+        ensure_assign(transform(real), mangled, ctx)
+        # f"({transform(real)} := {mangled})"
+        for real, mangled in ctx.assignment_temp_vars.items()
+    )
+    if target_assigns:
+        result.append(target_assigns + ", ")
     if has_continue:
         result.append(f"({ctx.continue_var} := False), ")
 
@@ -77,12 +89,11 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
     if orelse:
         result.append(f", {ctx.break_var} or [{orelse}]")
 
-    # result.append(f", ({target} := )")
-    # TODO make target available in scope
     result.append(")")
 
     ctx.break_var = prev_break_var
     ctx.continue_var = prev_continue_var
+    ctx.assignment_temp_vars.clear()
 
     return "".join(result)
 
@@ -110,9 +121,7 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
     inf_var, test_var = generate_names(2, prefix="__unused_loop_while_")
     body_var = generate_name(prefix="__body_while_")
 
-    orelse_statements = [
-        f"({transform(stmt)})" for stmt in node.orelse
-    ]
+    orelse_statements = [f"({transform(stmt)})" for stmt in node.orelse]
     orelse = ", ".join(orelse_statements) if orelse_statements else None
 
     result: list[str] = ["["]
@@ -159,7 +168,6 @@ def handle_continue(node: ast.Continue, transform: TransformFunc, ctx: Context):
 
 @Handle(ast.Raise)
 def handle_raise(node: ast.Raise, transform: TransformFunc, ctx: Context):
-    # TODO from
     temp_name = generate_name(prefix="__raise_")
     exc = transform(node.exc) if node.exc else "None"
     cause = transform(node.cause) if node.cause else "None"
@@ -333,10 +341,10 @@ def transform_pattern(
             else "True"
         )
         return (
-            f"{as_condition} and ({name} := {subject})"
+            f"{as_condition} and {ensure_assign(name, subject, ctx, in_match=True)}"
             if pattern.pattern
-            else f"({name} := {subject})"
-        ) # TODO subject can be falsey
+            else ensure_assign(name, subject, ctx, in_match=True)
+        )
     elif isinstance(pattern, ast.MatchValue):
         comparison_value = transform(pattern.value)
         op = (
@@ -401,11 +409,11 @@ def transform_pattern(
         return " and ".join(parts)
     elif isinstance(pattern, ast.MatchStar):
         if pattern.name:
-            return f"({pattern.name} := {subject})"  # TODO if subject is falsey, this will fail
+            return ensure_assign(pattern.name, subject, ctx, in_match=True)
+            # return f"({pattern.name} := {subject})"
         else:
             return "True"
     elif isinstance(pattern, ast.MatchMapping):
-        # TODO find out how rest parameter works
         parts = [
             f"isinstance({subject}, (__import__('collections', fromlist=('abc',)).abc.Mapping, dict, type(type.__dict__)))"
         ]
@@ -418,7 +426,8 @@ def transform_pattern(
             )
         if pattern.rest:
             rest_subject = f"{{k: v for k, v in {subject}.items() if k not in {{{', '.join(transform(key) for key in pattern.keys)}}}}}"
-            parts.append(f"({pattern.rest} := {rest_subject})")
+            # parts.append(f"({pattern.rest} := {rest_subject})")
+            parts.append(ensure_assign(pattern.rest, rest_subject, ctx, in_match=True))
         return " and ".join(parts)
     elif isinstance(pattern, ast.MatchClass):
         # uh oh
@@ -605,7 +614,7 @@ def handle_match(node: ast.Match, transform: TransformFunc, ctx: Context):
     subject_var = generate_name(prefix="__match_subject_")
 
     cases = ", ".join(
-        f"([{', '.join(transform(stmt) for stmt in case.body)}] if ({transform_pattern(case.pattern, subject_var, transform, ctx)}){f' and ({transform(case.guard)})' if case.guard else ''} else None)"  # TODO we don't need an if expr
+        f"({transform_pattern(case.pattern, subject_var, transform, ctx)}){f' and ({transform(case.guard)})' if case.guard else ''} and ([{', '.join(transform(stmt) for stmt in case.body)}])"
         for case in node.cases
     )
 

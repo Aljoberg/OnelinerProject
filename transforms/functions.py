@@ -1,6 +1,5 @@
 import ast
-from utils import Context, CurrentFunction, Handle, Scope, TransformFunc, generate_name, has_node
-# TODO all .update or (...:=...) repeats value twice
+from utils import Context, CurrentFunction, Handle, Scope, TransformFunc, ensure_assign, generate_name, has_node
 
 @Handle(ast.FunctionDef, ast.AsyncFunctionDef)
 def handle_function_def(
@@ -71,9 +70,10 @@ def handle_function_def(
     
     final_expr = ', '.join(filter(None, [func_expression, toggle_async, annotations_code]))
     
-    if ctx.scope == Scope.CLASS:
-        return f"[({node.name} := {final_expr}), {ctx.class_dict_var}.update({{{node.name!r}: {node.name}}})]"
-    return f"({node.name} := {final_expr})"
+    return ensure_assign(node.name, final_expr, ctx)
+    # if ctx.scope == Scope.CLASS:
+    #     return f"[({node.name} := {final_expr}), {ctx.class_dict_var}.update({{{node.name!r}: {node.name}}})]"
+    # return f"({node.name} := {final_expr})"
 
 
 @Handle(ast.Return)

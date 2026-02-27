@@ -28,7 +28,8 @@ def handle_tuple(node: ast.Tuple, transform: TransformFunc, ctx: Context):
 @Pure
 def handle_dict(node: ast.Dict, transform: TransformFunc, ctx: Context):
     items = ", ".join(
-        f"{transform(k)}: {transform(v)}" if k else f"**{transform(v)}" for k, v in zip(node.keys, node.values)
+        f"{transform(k)}: {transform(v)}" if k else f"**{transform(v)}"
+        for k, v in zip(node.keys, node.values)
     )
     return f"{{{items}}}"
 
@@ -40,12 +41,16 @@ def handle_set(node: ast.Set, transform: TransformFunc, ctx: Context):
     return f"{{{elts}}}"
 
 
+# why is this in literals lol
 @Handle(ast.comprehension)
 @Pure
 def handle_comprehension(
     node: ast.comprehension, transform: TransformFunc, ctx: Context
 ):
+    prev_should = ctx.should_assign_nonnames_to_temp
+    ctx.should_assign_nonnames_to_temp = False
     target = transform(node.target)
+    ctx.should_assign_nonnames_to_temp = prev_should
     iter_ = transform(node.iter)
     ifs = " ".join(f"if {transform(iff)}" for iff in node.ifs)
     return f"for {target} in {iter_} {ifs}"
@@ -83,8 +88,6 @@ def handle_dict_comp(
     return f"{{{key}: {value} {comprehensions}}}"
 
 
-
-
 def _handle_format_spec(node: ast.JoinedStr, transform: TransformFunc) -> str:
     parts = []
     for part in node.values:
@@ -102,20 +105,22 @@ def _handle_format_spec(node: ast.JoinedStr, transform: TransformFunc) -> str:
     return "".join(parts)
 
 
-def _handle_formatted_value_inner(node: ast.FormattedValue, transform: TransformFunc) -> str:
+def _handle_formatted_value_inner(
+    node: ast.FormattedValue, transform: TransformFunc
+) -> str:
     expr = transform(node.value)
     if expr.startswith("{"):
         expr = f" {expr}"
-    
+
     result = f"{{{expr}"
-    
+
     if node.conversion != -1:
         result += f"!{chr(node.conversion)}"
-    
+
     if node.format_spec:
         format_spec = _handle_format_spec(node.format_spec, transform)
         result += f":{format_spec}"
-    
+
     result += "}"
     return result
 
@@ -138,6 +143,7 @@ def handle_joined_str(node: ast.JoinedStr, transform: TransformFunc, ctx: Contex
 
 @Handle(ast.FormattedValue)
 @Pure
-def handle_formatted_value(node: ast.FormattedValue, transform: TransformFunc, ctx: Context):
+def handle_formatted_value(
+    node: ast.FormattedValue, transform: TransformFunc, ctx: Context
+):
     return _handle_formatted_value_inner(node, transform)
-    

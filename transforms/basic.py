@@ -14,6 +14,11 @@ def handle_name(node: ast.Name, transform: TransformFunc, ctx: Context):
         print("added to names", node, ctx.assignment_temp_vars)
         ctx.assignment_temp_vars[node] = mangled_name
         return mangled_name
+    # if isinstance(node.ctx, ast.Store) and node not in ctx.for_names:
+    #     mangled_name = generate_name(prefix=f"__temp_for_assignment__{node.id}__")
+    #     print("added to for names", node, ctx.for_names)
+    #     ctx.for_names[node] = mangled_name
+    #     return mangled_name
     return node.id
 
 
@@ -21,7 +26,7 @@ def handle_name(node: ast.Name, transform: TransformFunc, ctx: Context):
 def handle_subscript(node: ast.Subscript, transform: TransformFunc, ctx: Context):
     value = transform(node.value)
     slice_ = transform(node.slice)
-    if isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
+    if ctx.should_assign_nonnames_to_temp and isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
         mangled_name = generate_name(prefix=f"__temp_subscript_assignment__{value}_{slice_}__")
         ctx.assignment_temp_vars[node] = mangled_name
         return mangled_name
@@ -32,7 +37,8 @@ def handle_subscript(node: ast.Subscript, transform: TransformFunc, ctx: Context
 def handle_attribute(node: ast.Attribute, transform: TransformFunc, ctx: Context):
     value = transform(node.value)
     attr = node.attr
-    if isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
+    print(ctx.should_assign_nonnames_to_temp, "should assign")
+    if ctx.should_assign_nonnames_to_temp and isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
         mangled_name = generate_name(prefix=f"__temp_attr_assignment__{value}_{attr}__")
         ctx.assignment_temp_vars[node] = mangled_name
         return mangled_name

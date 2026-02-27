@@ -1,5 +1,5 @@
 import ast
-from utils import Context, Handle, TransformFunc, generate_name
+from utils import Context, Handle, TransformFunc, ensure_assign, generate_name
 
 
 @Handle(ast.Import)
@@ -24,10 +24,12 @@ def handle_import(node: ast.Import, transform: TransformFunc, ctx: Context):
     lines = []
     for alias in node.names:
         if alias.asname:
-            lines.append(f"({alias.asname} := __import__({alias.name!r}))")
+            lines.append(ensure_assign(alias.asname, f"__import__{alias.name!r}", ctx))
+            # lines.append(f"({alias.asname} := __import__({alias.name!r}))")
         else:
             mod_name = alias.name.split(".")[0]
-            lines.append(f"({mod_name} := __import__({alias.name!r}))")
+            lines.append(ensure_assign(mod_name, f"__import__({alias.name!r})", ctx))
+            # lines.append(f"({mod_name} := __import__({alias.name!r}))")
     return ", ".join(lines)
 
 
@@ -51,7 +53,9 @@ def handle_import_from(node: ast.ImportFrom, transform: TransformFunc, ctx: Cont
             #     f"globals().{{{k}: getattr({import_cached_varname}, {k}) for {k} in getattr({import_cached_varname}, '__all__', 0) or (i for i in dir({import_cached_varname}) if not i.startswith('__'))}}"
             # )
         elif alias.asname:
-            lines.append(f"({alias.asname} := {import_var}.{alias.name})")
+            lines.append(ensure_assign(alias.asname, f"{import_var}.{alias.name}", ctx))
+            # lines.append(f"({alias.asname} := {import_var}.{alias.name})")
         else:
-            lines.append(f"({alias.name} := {import_var}.{alias.name})")
+            lines.append(ensure_assign(alias.name, f"{import_var}.{alias.name}", ctx))
+            # lines.append(f"({alias.name} := {import_var}.{alias.name})")
     return f"({import_string}, {', '.join(lines)})"

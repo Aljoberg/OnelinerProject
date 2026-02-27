@@ -31,6 +31,9 @@ class Context:
     global_vars = set[str]()
     nonlocal_vars = set[str]()
     assignment_temp_vars = dict[ast.Name, str]()  # maps variable names to their current temp var for assignment expressions
+    should_assign_nonnames_to_temp = True
+    # for_names = dict[ast.Name, str]()  # names that are otherwise only in the comprehension
+    # in_for = False # TODO maybe just reuse assignment
 
 
 ctx = Context()  # maybe just use class attributes and not an instance
@@ -109,3 +112,11 @@ def Handle(*stmts: type[T]):
 def Pure(func: HandleFunc[T]):
     func.is_pure = True
     return func
+
+def ensure_assign(variable: str, value: str, ctx: Context, *, in_match=False):
+    if ctx.scope == Scope.CLASS:
+        return f"[({variable} := {value}), {ctx.class_dict_var}.update({{{variable!r}: {variable}}})]"
+    else:
+        if in_match:
+            return f"[({variable} := {value})]"
+        return f"({variable} := {value})"
