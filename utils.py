@@ -32,6 +32,7 @@ class Context:
     nonlocal_vars = set[str]()
     assignment_temp_vars = dict[ast.Name, str]()  # maps variable names to their current temp var for assignment expressions
     should_assign_nonnames_to_temp = True
+    should_assign_names = True
     # for_names = dict[ast.Name, str]()  # names that are otherwise only in the comprehension
     # in_for = False # TODO maybe just reuse assignment
 
@@ -89,9 +90,9 @@ def generate_names(n=1, prefix=""):
 def prepend(contents: str):
     valooe = f"{ctx.current_function.return_hit_var} or "  # <3.12 moment
     # valooe_loop = f"not {current_loop_and_function[1]} and not {current_loop_and_function[2]} and "
-    valooe_loop = f"any(({ctx.break_var}, {ctx.continue_var})) or "
+    valooe_loop = f"{ctx.continue_var} or "
     # input()
-    return f'({valooe if ctx.current_function.has_return else ""}{valooe_loop if ctx.in_loop else ""}{contents})' if any((ctx.current_function.has_return, ctx.in_loop)) else contents
+    return f'({valooe if ctx.current_function.has_return else ""}{valooe_loop if ctx.continue_var else ""}{contents})' if any((ctx.current_function.has_return, ctx.continue_var)) else contents
 
 
 def Handle(*stmts: type[T]):

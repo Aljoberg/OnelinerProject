@@ -41,6 +41,9 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
 
     prev_break_var = ctx.break_var
     prev_continue_var = ctx.continue_var
+    prev_in_loop = ctx.in_loop
+    ctx.in_loop = True
+    
 
     if has_break:
         break_var = generate_name(prefix="__break_for_")
@@ -87,12 +90,16 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
     result.append("]]")
 
     if orelse:
-        result.append(f", {ctx.break_var} or [{orelse}]")
+        if has_break:
+            result.append(f", {ctx.break_var} or [{orelse}]")
+        else:
+            result.append(f", [{orelse}]")
 
     result.append(")")
 
     ctx.break_var = prev_break_var
     ctx.continue_var = prev_continue_var
+    ctx.in_loop = prev_in_loop
     ctx.assignment_temp_vars.clear()
 
     return "".join(result)
@@ -105,6 +112,9 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
 
     prev_break_var = ctx.break_var
     prev_continue_var = ctx.continue_var
+    prev_in_loop = ctx.in_loop
+    ctx.in_loop = True
+
 
     if has_break:
         break_var = generate_name(prefix="__break_while_")
@@ -148,6 +158,7 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
 
     ctx.break_var = prev_break_var
     ctx.continue_var = prev_continue_var
+    ctx.in_loop = prev_in_loop
 
     return "".join(result)
 
@@ -156,7 +167,7 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
 def handle_break(node: ast.Break, transform: TransformFunc, ctx: Context):
     if ctx.break_var is None:
         raise SyntaxError("break statement not inside a loop")
-    return f"({ctx.break_var} := True)"
+    return f"[{ctx.break_var} := True, next(iter(()))]"
 
 
 @Handle(ast.Continue)
@@ -185,15 +196,21 @@ def handle_assert(node: ast.Assert, transform: TransformFunc, ctx: Context):
 
 
 def handle_with_item(items: list[ast.withitem], i: int, body: str, transform: TransformFunc, *, is_async: bool):
-    if i <= len(items):
+    if i >= len(items):
         return body
     
     item = items[i]
     manager_var = generate_name(prefix="__with_manager_")
-    enter_var = generate_name(prefix="__with_enter_")
     exit_var = generate_name(prefix="__with_exit_")
     value_var = generate_name(prefix="__with_value_")
     hit_except_var = generate_name(prefix="__with_hit_")
+
+    body_var = generate_name(prefix=f"__with_body_{i}_")
+    unused_body_for_var = generate_name(prefix="__unused_for_body_with_")
+    self_var = generate_name(prefix="__self_")
+    exception_type_var = generate_name(prefix="__exception_type_")
+    exception_var = generate_name(prefix="__exception_")
+    traceback_var = generate_name(prefix="__traceback_")
 
     context_expr = transform(item.context_expr)
     # is_async = isinstance(node, ast.AsyncWith)
@@ -204,16 +221,24 @@ def handle_with_item(items: list[ast.withitem], i: int, body: str, transform: Tr
     # body = ", ".join(body_statements)
     body = handle_with_item(items, i + 1, body, transform, is_async=is_async)
 
-    target_code = ""
     if item.optional_vars:
-        if isinstance(item.optional_vars, ast.Name):
-            target_code = f"{item.optional_vars.id} := {value_var}, "
-        elif isinstance(item.optional_vars, (ast.Tuple, ast.List)):
-            target_code = f"{transform(item.optional_vars)} := {value_var}, "
+        assign_node = ast.Assign(
+            targets=[item.optional_vars],
+            value=ast.Name(id=value_var, ctx=ast.Load())
+        )
+        assign_code = transform(assign_node) + ", "
+    else:
+        assign_code = ""
 
-    preparation = f"[{manager_var} := ({context_expr}), {exit_var} := {manager_var}.{enter_method}, {value_var} := {manager_var}.{enter_method}()]"
+    body_assign = f"({body_var} := ([{assign_code}{body}] for {unused_body_for_var} in [0]))"
 
-    try_stmt = ... # TODO lol
+    preparation = f"[{manager_var} := ({context_expr}), {exit_var} := {manager_var}.{exit_method}, {value_var} := {manager_var}.{enter_method}(), {hit_except_var} := [False]]"
+    
+    exit_lambda = f"lambda {self_var}, {exception_type_var}, {exception_var}, {traceback_var}: [{hit_except_var}.append(True), {exit_var}({exception_type_var}, {exception_var}, {traceback_var})][-1]"
+
+    try_stmt = f'type({repr(f"__With_{i}")}, (__import__("contextlib").ContextDecorator,), {{"__enter__": lambda {self_var}: {self_var}, "__exit__": {exit_lambda}}})()(lambda: (*{body_var}, {hit_except_var}[0] or {exit_var}(None, None, None)))()' # TODO lol
+
+    with_code = f"{body_assign}, {preparation}, {try_stmt}"
 #     with_code = f"""(
 # {manager_var} := {context_expr},
 # {enter_var} := type({manager_var}).{enter_method},
@@ -222,8 +247,6 @@ def handle_with_item(items: list[ast.withitem], i: int, body: str, transform: Tr
 # {hit_except_var} := False,
 # {target_code}[{body} for _ in [0]]
 # )[-1]"""
-
-    with_code = ""
 
     return with_code
 
@@ -267,7 +290,7 @@ def handle_try(node: ast.Try, transform: TransformFunc, ctx: Context):
     exc_in_exit_var = generate_name(prefix="__try_exc_exit_")
     unused_exc_type_var = generate_name(prefix="__try_exc_type_unused_")
     self_var = generate_name(prefix="__try_self_")
-    unused_last_exit_var = generate_name(prefix="__try_last_exit_unused_")
+    unused_traceback_var = generate_name(prefix="__try_last_exit_unused_")
     class_name = generate_name(prefix="__TryExcept_")
 
     handler_vars = [generate_name(prefix="__handler_") for _ in handlers]
@@ -301,7 +324,7 @@ def handle_try(node: ast.Try, transform: TransformFunc, ctx: Context):
         + "None"
     )
 
-    exit_lambda = f"""lambda {self_var}, {unused_exc_type_var}, {exc_in_exit_var}, {unused_last_exit_var}: {exc_in_exit_var} and ({exc_variable}.append({exc_in_exit_var}) or ({handler_checks}{finalbody and f' and (*{finally_variable},)'}))"""
+    exit_lambda = f"""lambda {self_var}, {unused_exc_type_var}, {exc_in_exit_var}, {unused_traceback_var}: [{exc_in_exit_var} and ({exc_variable}.append({exc_in_exit_var}) or ({handler_checks}{finalbody and f' and (*{finally_variable},)'}))]"""
 
     try_except_func = f"""(\
 {exc_variable} := [], {try_variable} := ({try_body}), \

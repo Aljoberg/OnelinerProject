@@ -56,7 +56,7 @@ def handle_function_def(
 
     annotations_code = ""
     if annotations:
-        annotations_code = f"{node.name}.__annotations__.update({{{', '.join(f'{key!r}: {value}' for key, value in annotations.items())}}})"
+        annotations_code = f"hasattr({node.name}, '__annotations__') and {node.name}.__annotations__.update({{{', '.join(f'{key!r}: {value}' for key, value in annotations.items())}}})"
     
     return_store = f"({ctx.current_function.return_store_var} := [None]), ({ctx.current_function.return_hit_var} := False), " if ctx.current_function.has_return else ""
     body_code = f"[{return_store}{body}{f', {ctx.current_function.return_store_var}[-1]' if ctx.current_function.has_return else ', None'}][-1]"
@@ -79,11 +79,17 @@ def handle_function_def(
 @Handle(ast.Return)
 def handle_return(node: ast.Return, transform: TransformFunc, ctx: Context):
     if ctx.scope == Scope.FUNCTION:
+        parts = [f"{ctx.current_function.return_hit_var} := True"]
         if node.value:
             value = transform(node.value)
-            return f"({ctx.current_function.return_store_var}.append({value}) or ({ctx.current_function.return_hit_var} := True))"
-        else:
-            return f"({ctx.current_function.return_hit_var} := True)"
+            parts.insert(0, f"{ctx.current_function.return_store_var}.append({value})")
+            # return f"({ctx.current_function.return_store_var}.append({value}) or ({ctx.current_function.return_hit_var} := True))"
+        # else:
+        #     return f"({ctx.current_function.return_hit_var} := True)"
+        if ctx.in_loop:
+            parts.append("next(iter(()))")
+        
+        return "[" + ", ".join(parts) + "]"
     else:
         raise SyntaxError("Return statement outside of function")
 

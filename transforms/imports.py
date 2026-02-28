@@ -24,7 +24,7 @@ def handle_import(node: ast.Import, transform: TransformFunc, ctx: Context):
     lines = []
     for alias in node.names:
         if alias.asname:
-            lines.append(ensure_assign(alias.asname, f"__import__{alias.name!r}", ctx))
+            lines.append(ensure_assign(alias.asname, f"__import__({alias.name!r})", ctx))
             # lines.append(f"({alias.asname} := __import__({alias.name!r}))")
         else:
             mod_name = alias.name.split(".")[0]

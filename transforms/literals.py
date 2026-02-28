@@ -48,12 +48,18 @@ def handle_comprehension(
     node: ast.comprehension, transform: TransformFunc, ctx: Context
 ):
     prev_should = ctx.should_assign_nonnames_to_temp
+    prev_names = ctx.should_assign_names
     ctx.should_assign_nonnames_to_temp = False
+    ctx.should_assign_names = False
+
     target = transform(node.target)
+
     ctx.should_assign_nonnames_to_temp = prev_should
+    ctx.should_assign_names = prev_names
+
     iter_ = transform(node.iter)
     ifs = " ".join(f"if {transform(iff)}" for iff in node.ifs)
-    return f"for {target} in {iter_} {ifs}"
+    return f"for {target} in {iter_}{' ' + ifs if ifs else ''}"
 
 
 @Handle(ast.GeneratorExp, ast.ListComp, ast.SetComp)
@@ -63,6 +69,9 @@ def handle_generator_exp(
     transform: TransformFunc,
     ctx: Context,
 ):
+    prev_in_loop = ctx.in_loop
+    ctx.in_loop = True
+
     elt = transform(node.elt)
     comprehensions = " ".join(transform(comp) for comp in node.generators)
 
@@ -71,6 +80,8 @@ def handle_generator_exp(
         if isinstance(node, ast.ListComp)
         else "()" if isinstance(node, ast.GeneratorExp) else "{}"
     )
+
+    ctx.in_loop = prev_in_loop
 
     return f"{brackets[0]}{elt} {comprehensions}{brackets[1]}"
 
@@ -82,9 +93,15 @@ def handle_dict_comp(
     transform: TransformFunc,
     ctx: Context,
 ):
+    prev_in_loop = ctx.in_loop
+    ctx.in_loop = True
+
     key = transform(node.key)
     value = transform(node.value)
     comprehensions = " ".join(transform(comp) for comp in node.generators)
+
+    ctx.in_loop = prev_in_loop
+
     return f"{{{key}: {value} {comprehensions}}}"
 
 

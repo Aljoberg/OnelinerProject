@@ -9,7 +9,7 @@ def handle_expr(node: ast.Expr, transform: TransformFunc, ctx: Context):
 @Handle(ast.Name)
 @Pure
 def handle_name(node: ast.Name, transform: TransformFunc, ctx: Context):
-    if isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
+    if ctx.should_assign_names and isinstance(node.ctx, ast.Store) and node not in ctx.assignment_temp_vars:
         mangled_name = generate_name(prefix=f"__temp_assigment__{node.id}__")
         print("added to names", node, ctx.assignment_temp_vars)
         ctx.assignment_temp_vars[node] = mangled_name
@@ -85,3 +85,9 @@ def handle_nonlocal(node: ast.Nonlocal, transform: TransformFunc, ctx: Context):
     ctx.nonlocal_vars.update(node.names)
     # return ", ".join(node.names)
     return "None"
+
+@Handle(ast.Starred)
+def handle_starred(node: ast.Starred, transform: TransformFunc, ctx: Context):
+    value = transform(node.value)
+    
+    return f"*{value}"
