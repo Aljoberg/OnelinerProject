@@ -6,7 +6,7 @@ import string
 from typing import Callable, TypeVar
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 class Scope(enum.Enum):
     MODULE = enum.auto()
@@ -20,19 +20,19 @@ class CurrentFunction:
     return_hit_var: str = ""
     return_store_var: str = ""
 
-
+@dataclass
 class Context:
-    in_loop = False
-    continue_var = ""
-    break_var = ""
-    scope = Scope.MODULE
-    current_function = CurrentFunction()  # same here
-    class_dict_var = ""  # for class scope, holds the dict where we can store annotations and other class-level info
-    global_vars = set[str]()
-    nonlocal_vars = set[str]()
-    assignment_temp_vars = dict[ast.Name, str]()  # maps variable names to their current temp var for assignment expressions
-    should_assign_nonnames_to_temp = True
-    should_assign_names = True
+    in_loop: bool = False
+    continue_var: str = ""
+    break_var: str = ""
+    scope: Scope = Scope.MODULE
+    current_function: CurrentFunction = field(default_factory=CurrentFunction)
+    class_dict_var: str = ""  # for class scope, holds the dict where we can store annotations and other class-level info
+    global_vars: set[str] = field(default_factory=set)
+    nonlocal_vars: set[str] = field(default_factory=set)
+    assignment_temp_vars: dict[ast.Name, str] = field(default_factory=dict)  # maps variable names to their current temp var for assignment expressions
+    should_assign_nonnames_to_temp: bool = True
+    should_assign_names: bool = True
     # for_names = dict[ast.Name, str]()  # names that are otherwise only in the comprehension
     # in_for = False # TODO maybe just reuse assignment
 
@@ -63,9 +63,13 @@ def generate_name(prefix=""):
 DEBUG = False  # for prefixes and logs, i suppose
 forbidden_names = set()
 
-def set_forbidden_names(*names: str): # this is weird
-    print(names, "forbidden names")
+def add_forbidden_names(*names: str): # this is weird
+    # print(names, "forbidden names")
     forbidden_names.update(names)
+
+def set_debug(debug: bool):
+    global DEBUG
+    DEBUG = debug
 
 def generate_names(n=1, prefix=""):
     possible_chars = string.ascii_letters
@@ -102,7 +106,7 @@ def Handle(*stmts: type[T]):
         real_func = (
             func
             if func.is_pure
-            else lambda *args, **kwargs: print("hi", args, kwargs) or prepend(func(*args, **kwargs)) # TODO cast type to TransformFunc
+            else lambda *args, **kwargs: prepend(func(*args, **kwargs)) # TODO cast type to TransformFunc
         )
         for stmt in stmts:
             stmt_handlers[stmt] = real_func
@@ -121,3 +125,19 @@ def ensure_assign(variable: str, value: str, ctx: Context, *, in_match=False):
         if in_match:
             return f"[({variable} := {value})]"
         return f"({variable} := {value})"
+    
+def reset():
+    global ctx, DEBUG
+    ctx.in_loop = False
+    ctx.continue_var = ""
+    ctx.break_var = ""
+    ctx.scope = Scope.MODULE
+    ctx.current_function = CurrentFunction()
+    ctx.class_dict_var = ""
+    ctx.global_vars.clear()
+    ctx.nonlocal_vars.clear()
+    ctx.assignment_temp_vars.clear()
+    ctx.should_assign_nonnames_to_temp = True
+    ctx.should_assign_names = True
+    forbidden_names.clear()
+    DEBUG = False

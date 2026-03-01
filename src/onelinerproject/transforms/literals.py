@@ -1,5 +1,5 @@
 import ast
-from utils import Context, Handle, Pure, TransformFunc
+from ..utils import Context, Handle, Pure, TransformFunc
 
 
 @Handle(ast.Constant)
@@ -114,7 +114,7 @@ def _handle_format_spec(node: ast.JoinedStr, transform: TransformFunc) -> str:
             value = value.replace("'", "\\'")
             value = value.replace('"', '\\"')
             value = value.replace("\n", "\\n")
-            parts.append(value)
+            parts.append(repr(value)[1:-1])
         elif isinstance(part, ast.FormattedValue):
             parts.append(_handle_formatted_value_inner(part, transform))
         else:
@@ -149,7 +149,7 @@ def handle_joined_str(node: ast.JoinedStr, transform: TransformFunc, ctx: Contex
     for part in node.values:
         if isinstance(part, ast.Constant) and isinstance(part.value, str):
             value = part.value.replace("{", "{{").replace("}", "}}")
-            parts.append(value)
+            parts.append(repr(value)[1:-1])
         elif isinstance(part, ast.FormattedValue):
             parts.append(_handle_formatted_value_inner(part, transform))
         else:

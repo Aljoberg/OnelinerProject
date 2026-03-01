@@ -1,6 +1,6 @@
 import ast
 from copy import deepcopy
-from utils import Handle, Scope, TransformFunc, ensure_assign, generate_name, Context, has_node
+from ..utils import Handle, Scope, TransformFunc, ensure_assign, generate_name, Context, has_node
 
 
 # _AUG_OP_MAP = {
@@ -29,11 +29,11 @@ def choose_assign(
     # i hope that's all of them
     if isinstance(node, ast.Name):
         # direct bind
-        print(ctx.assignment_temp_vars, "assignment temp vars")
+        # print(ctx.assignment_temp_vars, "assignment temp vars")
         # real_name = ctx.assignment_temp_vars.get(node, node.id)
         real_name = node.id
         # real_name = ctx.assignment_temp_vars[node]
-        print(real_name)
+        # print(real_name)
 
         if real_name in ctx.global_vars:
             return f"globals().update({{{real_name!r}: {value}}})"
@@ -62,7 +62,7 @@ def choose_assign(
 def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
     ctx.assignment_temp_vars.clear()  # clear temp vars for this assignment
     orig_value = transform(node.value)
-    print(node.targets)
+    # print(node.targets)
     out = []
     has_walrus = has_node(node, ast.NamedExpr)
     if has_walrus or len(node.targets) > 1:

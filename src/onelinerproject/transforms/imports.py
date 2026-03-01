@@ -1,5 +1,5 @@
 import ast
-from utils import Context, Handle, TransformFunc, ensure_assign, generate_name
+from ..utils import Context, Handle, TransformFunc, ensure_assign, generate_name
 
 
 @Handle(ast.Import)

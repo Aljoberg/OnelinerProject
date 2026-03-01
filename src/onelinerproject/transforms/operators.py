@@ -1,5 +1,5 @@
 import ast
-from utils import Context, Handle, Pure, TransformFunc
+from ..utils import Context, Handle, Pure, TransformFunc
 
 _BIN_OP_MAP: dict[type[ast.AST], str] = {
     ast.Add: "+",

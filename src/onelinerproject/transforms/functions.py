@@ -1,5 +1,5 @@
 import ast
-from utils import Context, CurrentFunction, Handle, Scope, TransformFunc, ensure_assign, generate_name, has_node
+from ..utils import Context, CurrentFunction, Handle, Scope, TransformFunc, ensure_assign, generate_name, has_node
 
 @Handle(ast.FunctionDef, ast.AsyncFunctionDef)
 def handle_function_def(

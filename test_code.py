@@ -16,7 +16,7 @@
 #         nonlocal a
 #         a += 1
 #         return a
-    
+
 #     print(a)
 #     print(inner())
 #     print(a)
@@ -69,13 +69,13 @@
 #         d: str = "world"
 
 #     print(i)
-    
+
 
 #     def test(self):
 #         b: str = "hello"
 #         c: float = 3.14
 #         return self.a, b, c
-    
+
 # t = Test()
 
 # print(__annotations__)
@@ -177,7 +177,7 @@
 #         # Sort by distance and return indices of the first k neighbors
 #         k_indices = np.argsort(distances)[:self.k]
 #         # Extract the labels of the k nearest neighbor training samples
-#         k_nearest_labels = [self.y_train[i] for i in k_indices]  
+#         k_nearest_labels = [self.y_train[i] for i in k_indices]
 #         # Return the most common class label
 #         most_common = Counter(k_nearest_labels).most_common(1)
 #         return most_common[0][0]
@@ -199,5 +199,29 @@
 #     accuracy = np.mean(predictions == y_test)
 #     print(f"KNN classification accuracy: {accuracy}")
 
-with open("hello_there.txt", "w") as f:
-    f.write("hi")
+# with open("hello_there.txt", "w") as f:
+#     f.write("hi")
+
+import asyncio
+
+
+async def main():
+    count = 0
+
+    def make_counter():
+        nonlocal count
+        count = count + 1
+        return count
+
+    print("Starting")
+    await asyncio.sleep(0.5)
+    try:
+        with open("temp.txt", "w") as f:
+            while count < 3:
+                f.write(f"{make_counter()}\n")
+    except OSError as e:
+        print("File error:", e)
+
+
+asyncio.run(main())
+print("Done")

@@ -1,6 +1,7 @@
 import ast, builtins, string, itertools, keyword
+import sys
 from typing import Callable, TypeVar
-from utils import generate_name, set_forbidden_names, stmt_handlers, prepend, ctx
+from .utils import generate_name, reset, set_debug, add_forbidden_names, stmt_handlers, prepend, ctx
 
 sln = ", "
 
@@ -959,133 +960,133 @@ class sans:
             return prepend(loop_gen)
 
         # elif isinstance(node, (ast.Try, getattr(ast, "TryStar", None) or ast.Try)): TODO: make trystar
-        elif isinstance(node, ast.Try):
-            try_body = (
-                "["
-                + ", ".join(
-                    f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
-                    for stmt in node.body
-                )
-                + "] for _ in [0]"
-            )
-            handlers: list[tuple[str | None, str, str]] = (
-                [  # exception class, exception variable, handler body
-                    (
-                        (
-                            handler.type
-                            and sans.transform_node(
-                                handler.type,
-                                current_loop_and_function,
-                                varname,
-                                scopes,
-                                exc_name,
-                                loop_vars,
-                            )
-                        ),
-                        handler.name or generate_variable_name(),
-                        "["
-                        + ", ".join(
-                            f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
-                            for stmt in handler.body
-                        )
-                        + "]",
-                    )
-                    for handler in node.handlers
-                ]
-            )
+#         elif isinstance(node, ast.Try):
+#             try_body = (
+#                 "["
+#                 + ", ".join(
+#                     f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
+#                     for stmt in node.body
+#                 )
+#                 + "] for _ in [0]"
+#             )
+#             handlers: list[tuple[str | None, str, str]] = (
+#                 [  # exception class, exception variable, handler body
+#                     (
+#                         (
+#                             handler.type
+#                             and sans.transform_node(
+#                                 handler.type,
+#                                 current_loop_and_function,
+#                                 varname,
+#                                 scopes,
+#                                 exc_name,
+#                                 loop_vars,
+#                             )
+#                         ),
+#                         handler.name or generate_variable_name(),
+#                         "["
+#                         + ", ".join(
+#                             f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
+#                             for stmt in handler.body
+#                         )
+#                         + "]",
+#                     )
+#                     for handler in node.handlers
+#                 ]
+#             )
 
-            # Process exception handlers
-            # for handler in node.handlers:
-            #     exc_type = (
-            #         sans.transform_node(
-            #             handler.type,
-            #             current_loop_and_function,
-            #             varname,
-            #             scopes,
-            #             exc_name,
-            #             loop_vars,
-            #         )
-            #         if handler.type
-            #         else ""
-            #     )
-            #     exc_name = handler.name or ""
+#             # Process exception handlers
+#             # for handler in node.handlers:
+#             #     exc_type = (
+#             #         sans.transform_node(
+#             #             handler.type,
+#             #             current_loop_and_function,
+#             #             varname,
+#             #             scopes,
+#             #             exc_name,
+#             #             loop_vars,
+#             #         )
+#             #         if handler.type
+#             #         else ""
+#             #     )
+#             #     exc_name = handler.name or ""
 
-            #     handler_body = (
-            #         "["
-            #         + ", ".join(
-            #             f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
-            #             for stmt in handler.body
-            #         )
-            #         + "]"
-            #     )
+#             #     handler_body = (
+#             #         "["
+#             #         + ", ".join(
+#             #             f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
+#             #             for stmt in handler.body
+#             #         )
+#             #         + "]"
+#             #     )
 
-            #     handlers.append(
-            #         f'except{"*" if hasattr(ast, "TryStar") and isinstance(node, ast.TryStar) else ""}{f" {exc_type}" if exc_type else ""}{f" as {exc_name}" if exc_name else ""}: {handler_body}'
-            #     )
+#             #     handlers.append(
+#             #         f'except{"*" if hasattr(ast, "TryStar") and isinstance(node, ast.TryStar) else ""}{f" {exc_type}" if exc_type else ""}{f" as {exc_name}" if exc_name else ""}: {handler_body}'
+#             #     )
 
-            # Process orelse part
-            orelse_body = ""
-            if node.orelse:
-                orelse_body = (
-                    "["
-                    + ", ".join(
-                        f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
-                        for stmt in node.orelse
-                    )
-                    + "]"
-                )
+#             # Process orelse part
+#             orelse_body = ""
+#             if node.orelse:
+#                 orelse_body = (
+#                     "["
+#                     + ", ".join(
+#                         f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
+#                         for stmt in node.orelse
+#                     )
+#                     + "]"
+#                 )
 
-            # Process finalbody part
-            finalbody = ""
-            if node.finalbody:
-                finalbody = (
-                    "["
-                    + ", ".join(
-                        f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
-                        for stmt in node.finalbody
-                    )
-                    + "]"
-                )
+#             # Process finalbody part
+#             finalbody = ""
+#             if node.finalbody:
+#                 finalbody = (
+#                     "["
+#                     + ", ".join(
+#                         f"{sans.transform_node(stmt, current_loop_and_function, varname, scopes, exc_name, loop_vars)}"
+#                         for stmt in node.finalbody
+#                     )
+#                     + "]"
+#                 )
 
-            # name_references = {
-            #     *(
-            #         i.id
-            #         for m in node.body
-            #         for i in ast.walk(m)
-            #         if isinstance(i, ast.Name)
-            #         and isinstance(i.ctx, ast.Load)
-            #         and not hasattr(builtins, i.id)
-            #     ),
-            #     current_loop_and_function[0]["name"],
-            # }
-            # try_except_func = f"exec({f'try: {try_body}{newline}{handlers_chain}{newline}{orelse_body}{newline}{finalbody}'!r}, globals(), {{{(lambda s: s + ', ' if s else '')(', '.join(f'{i!r}: {i}' for i in name_references))}**locals()}})"
+#             # name_references = {
+#             #     *(
+#             #         i.id
+#             #         for m in node.body
+#             #         for i in ast.walk(m)
+#             #         if isinstance(i, ast.Name)
+#             #         and isinstance(i.ctx, ast.Load)
+#             #         and not hasattr(builtins, i.id)
+#             #     ),
+#             #     current_loop_and_function[0]["name"],
+#             # }
+#             # try_except_func = f"exec({f'try: {try_body}{newline}{handlers_chain}{newline}{orelse_body}{newline}{finalbody}'!r}, globals(), {{{(lambda s: s + ', ' if s else '')(', '.join(f'{i!r}: {i}' for i in name_references))}**locals()}})"
 
-            exc_variable = generate_variable_name()
-            try_variable = generate_variable_name()
-            else_variable = generate_variable_name()
-            finally_variable = generate_variable_name()
-            exc_in_exit_variable_used = generate_variable_name()
-            exc_in_exit_variable_0 = generate_variable_name()
-            exc_in_exit_variable_2 = generate_variable_name()
-            self_variable = generate_variable_name()
-            exc_1_variable = generate_variable_name()
-            orelse_iter_variable = generate_variable_name()
-            finally_iter_variable = generate_variable_name()
-            handler_global_vars = []
+#             exc_variable = generate_variable_name()
+#             try_variable = generate_variable_name()
+#             else_variable = generate_variable_name()
+#             finally_variable = generate_variable_name()
+#             exc_in_exit_variable_used = generate_variable_name()
+#             exc_in_exit_variable_0 = generate_variable_name()
+#             exc_in_exit_variable_2 = generate_variable_name()
+#             self_variable = generate_variable_name()
+#             exc_1_variable = generate_variable_name()
+#             orelse_iter_variable = generate_variable_name()
+#             finally_iter_variable = generate_variable_name()
+#             handler_global_vars = []
 
-            try_except_func = f"""\
-({exc_variable} := [], {try_variable} := ({try_body}), \
-({', '.join(f'{(lambda var: handler_global_vars.append(var) or var)(generate_variable_name())} := \
-({body} for {exc_var} in {exc_variable})' for _, exc_var, body in handlers)}), \
-{orelse_body and f'{else_variable} := ({orelse_body} for {orelse_iter_variable} in [0]), '}\
-{finalbody and f'{finally_variable} := ({finalbody} for {finally_iter_variable} in [0]), '}\
-type("__TryExcept", (__import__("contextlib").ContextDecorator,), {{\
-"__enter__": lambda {self_variable}: {self_variable}, \
-"__exit__": lambda {self_variable}, {exc_in_exit_variable_0}, {exc_in_exit_variable_used}, {exc_in_exit_variable_2}: {exc_in_exit_variable_used} and ({exc_variable}.append({exc_1_variable} := {exc_in_exit_variable_used}) \
-or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}, {exc_name}) else' if exc_name else ''}''' for i, (exc_name, _, _) in enumerate(handlers))} {'None' if handlers[-1][0] else ''}))\
-{finalbody and f' and (*{finally_variable},) '}\
-}})()(lambda: (*{try_variable},{orelse_body and f' *{else_variable}'}{finalbody and (f', *{finally_variable}' if orelse_body else f' *{finally_variable}')}))()\
-)"""
+#             try_except_func = f"""\
+# ({exc_variable} := [], {try_variable} := ({try_body}), \
+# ({', '.join(f'{(lambda var: handler_global_vars.append(var) or var)(generate_variable_name())} := \
+# ({body} for {exc_var} in {exc_variable})' for _, exc_var, body in handlers)}), \
+# {orelse_body and f'{else_variable} := ({orelse_body} for {orelse_iter_variable} in [0]), '}\
+# {finalbody and f'{finally_variable} := ({finalbody} for {finally_iter_variable} in [0]), '}\
+# type("__TryExcept", (__import__("contextlib").ContextDecorator,), {{\
+# "__enter__": lambda {self_variable}: {self_variable}, \
+# "__exit__": lambda {self_variable}, {exc_in_exit_variable_0}, {exc_in_exit_variable_used}, {exc_in_exit_variable_2}: {exc_in_exit_variable_used} and ({exc_variable}.append({exc_1_variable} := {exc_in_exit_variable_used}) \
+# or ({' '.join(f'''(*{handler_global_vars[i]},){f' if isinstance({exc_1_variable}, {exc_name}) else' if exc_name else ''}''' for i, (exc_name, _, _) in enumerate(handlers))} {'None' if handlers[-1][0] else ''}))\
+# {finalbody and f' and (*{finally_variable},) '}\
+# }})()(lambda: (*{try_variable},{orelse_body and f' *{else_variable}'}{finalbody and (f', *{finally_variable}' if orelse_body else f' *{finally_variable}')}))()\
+# )"""
 
             print(try_except_func)
 
@@ -1833,7 +1834,7 @@ def annotate_parents(root):
 # global_tree = []
 
 
-def code_to_oneliner(code):
+def code_to_oneliner(code, debug=False):
     # global global_tree
     global forbidden_names
     tree = ast.parse(code)
@@ -1844,7 +1845,8 @@ def code_to_oneliner(code):
         for i in ast.walk(tree)
         if isinstance(i, (ast.alias, ast.Name))
     }
-    set_forbidden_names(*forbidden_names)
+    add_forbidden_names(*forbidden_names)
+    set_debug(debug)
     # global_tree = list(ast.walk(tree))
     # print(tree.body[0].body[0].body[0].parent.parent)
     # sans.func_dict = {}
@@ -1857,8 +1859,9 @@ def code_to_oneliner(code):
 
 
 
-import transforms # TODO relative import probably
-print("hello", transforms)
+from . import transforms
+
+list([transforms]) # load the package
 
 # @Handle(ast.BinOp)
 # def adder(node: ast.BinOp, transform: TransformFunc) -> str:

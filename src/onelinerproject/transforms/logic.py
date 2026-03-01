@@ -1,6 +1,6 @@
 import ast
 import itertools
-from utils import (
+from ..utils import (
     Context,
     Handle,
     TransformFunc,
@@ -66,13 +66,13 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
         result.append(f"({ctx.break_var} := False), ")
 
     result.append("[[")
-    print(ctx.assignment_temp_vars)
+    # print(ctx.assignment_temp_vars)
     ctx.assignment_temp_vars.clear()
     prev_should = ctx.should_assign_nonnames_to_temp
     ctx.should_assign_nonnames_to_temp = False
     target = transform(node.target)
     ctx.should_assign_nonnames_to_temp = prev_should
-    print(ctx.assignment_temp_vars)
+    # print(ctx.assignment_temp_vars)
     target_assigns = ", ".join(
         ensure_assign(transform(real), mangled, ctx)
         # f"({transform(real)} := {mangled})"
@@ -203,7 +203,7 @@ def handle_with_item(items: list[ast.withitem], i: int, body: str, transform: Tr
     manager_var = generate_name(prefix="__with_manager_")
     exit_var = generate_name(prefix="__with_exit_")
     value_var = generate_name(prefix="__with_value_")
-    hit_except_var = generate_name(prefix="__with_hit_")
+    # hit_except_var = generate_name(prefix="__with_hit_")
 
     body_var = generate_name(prefix=f"__with_body_{i}_")
     unused_body_for_var = generate_name(prefix="__unused_for_body_with_")
@@ -232,27 +232,18 @@ def handle_with_item(items: list[ast.withitem], i: int, body: str, transform: Tr
 
     body_assign = f"({body_var} := ([{assign_code}{body}] for {unused_body_for_var} in [0]))"
 
-    preparation = f"[{manager_var} := ({context_expr}), {exit_var} := {manager_var}.{exit_method}, {value_var} := {manager_var}.{enter_method}(), {hit_except_var} := [False]]"
+    preparation = f"[{manager_var} := ({context_expr}), {exit_var} := {manager_var}.{exit_method}, {value_var} := {manager_var}.{enter_method}()]"
     
-    exit_lambda = f"lambda {self_var}, {exception_type_var}, {exception_var}, {traceback_var}: [{hit_except_var}.append(True), {exit_var}({exception_type_var}, {exception_var}, {traceback_var})][-1]"
+    exit_lambda = f"lambda {self_var}, {exception_type_var}, {exception_var}, {traceback_var}: {exit_var}({exception_type_var}, {exception_var}, {traceback_var})"
 
-    try_stmt = f'type({repr(f"__With_{i}")}, (__import__("contextlib").ContextDecorator,), {{"__enter__": lambda {self_var}: {self_var}, "__exit__": {exit_lambda}}})()(lambda: (*{body_var}, {hit_except_var}[0] or {exit_var}(None, None, None)))()' # TODO lol
+    try_stmt = f'type({repr(f"__With_{i}")}, (__import__("contextlib").ContextDecorator,), {{"__enter__": lambda {self_var}: {self_var}, "__exit__": {exit_lambda}}})()(lambda: (*{body_var},))()' # TODO lol
 
     with_code = f"{body_assign}, {preparation}, {try_stmt}"
-#     with_code = f"""(
-# {manager_var} := {context_expr},
-# {enter_var} := type({manager_var}).{enter_method},
-# {exit_var} := type({manager_var}).{exit_method},
-# {value_var} := {enter_var}({manager_var}),
-# {hit_except_var} := False,
-# {target_code}[{body} for _ in [0]]
-# )[-1]"""
 
     return with_code
 
 @Handle(ast.With, ast.AsyncWith)
 def handle_with(node: ast.With | ast.AsyncWith, transform: TransformFunc, ctx: Context):
-    # TODO
     body_statements = [f"({transform(stmt)})" for stmt in node.body]
     body = ", ".join(body_statements)
     
@@ -463,160 +454,8 @@ def transform_pattern(
             parts.append(f"hasattr({subject}, {kwd_attr!r})")
             parts.append(transform_pattern(kwd_pattern, attr_subject, transform, ctx))
         return " and ".join(parts)
-    # elif isinstance(pattern, ast.MatchSingleton):
-    #     comparison_value = repr(pattern.value)
-    #     return f"{subject} is {comparison_value}"
 
-    # elif isinstance(pattern, ast.Match)
-
-    return "Hi"
-    # from utils import generate_name
-
-    # if isinstance(pattern, ast.MatchValue):
-    #     comparison_value = transform(pattern.value)
-    #     return comparison_value if is_nested else f"{subject} == {comparison_value}"
-    # elif isinstance(pattern, ast.MatchSingleton):
-    #     comparison_value = repr(pattern.value)
-    #     return comparison_value if is_nested else f"{subject} is {comparison_value}"
-    # elif isinstance(pattern, ast.MatchSequence):
-    #     sequence_conditions = []
-    #     star = False
-    #     for i, el in enumerate(pattern.patterns):
-    #         if isinstance(el, ast.MatchAs) and el.pattern is None:
-    #             name = el.name or "_"
-    #             sequence_conditions.append(f"[({name} := {subject}[{i}])] or True")
-    #         elif isinstance(el, ast.MatchAs):
-    #             name = el.name or "_"
-    #             as_condition = transform_pattern(
-    #                 el.pattern, subject, transform, ctx, is_nested
-    #             )
-    #             sequence_conditions.append(
-    #                 f"[({name} := {subject}[{i}]), {as_condition}][-1]"
-    #             )
-    #         elif isinstance(el, ast.MatchOr):
-    #             or_conditions = [
-    #                 f"{subject}[{i}] == {transform_pattern(p, subject, transform, ctx, True)}"
-    #                 for p in el.patterns
-    #             ]
-    #             sequence_conditions.append(f"({' or '.join(or_conditions)})")
-    #         elif isinstance(el, ast.MatchStar):
-    #             star = True
-    #             break
-    #         else:
-    #             seq_pattern = transform_pattern(el, subject, transform, ctx, True)
-    #             sequence_conditions.append(f"{subject}[{i}] == {seq_pattern}")
-    #     length_check = (
-    #         f"(len({subject}) {'>=' if star else '=='} {len(pattern.patterns)})"
-    #     )
-    #     combined_conditions = " and ".join(sequence_conditions)
-    #     return f"({length_check} and ({combined_conditions}))"
-    # elif isinstance(pattern, ast.MatchClass):
-    #     cls_name = pattern.cls.id
-    #     attribute_conditions = []
-    #     keyword_patterns = [
-    #         f"{subject}.{kwd_attr} == {transform_pattern(kwd_pattern, subject, transform, ctx, True)}"
-    #         for kwd_attr, kwd_pattern in zip(pattern.kwd_attrs, pattern.kwd_patterns)
-    #     ]
-    #     for i, attr_pattern in enumerate(pattern.patterns):
-    #         if isinstance(attr_pattern, ast.MatchAs):
-    #             name = attr_pattern.name or "_"
-    #             if attr_pattern.pattern:
-    #                 nested_pattern = transform_pattern(
-    #                     attr_pattern.pattern, subject, transform, ctx, True
-    #                 )
-    #                 attribute_conditions.append(
-    #                     f"({nested_pattern} and ({name} := getattr({subject}, {attr_pattern.name!r})))"
-    #                 )
-    #             else:
-    #                 attribute_conditions.append(
-    #                     f"({name} := getattr({subject}, {attr_pattern.name!r}))"
-    #                 )
-    #         elif isinstance(attr_pattern, ast.MatchValue):
-    #             comparison_value = transform_pattern(
-    #                 attr_pattern.value, subject, transform, ctx, True
-    #             )
-    #             attribute_conditions.append(
-    #                 f"{comparison_value} == getattr({subject}, '__class__')"
-    #             )
-    #         else:
-    #             raise NotImplementedError(
-    #                 f"Attribute pattern type {type(attr_pattern)} not implemented in MatchClass"
-    #             )
-    #     instance_check = f"i    # def transform_case(case: ast.match_case):
-
-
-# sinstance({subject}, {cls/_name})"
-#     attribute_conditions.append("True")
-#     combined_conditions = " and ".join(attribute_conditions + keyword_patterns)
-#     return f"{instance_check} and ({combined_conditions})"
-# elif isinstance(pattern, ast.MatchMapping):
-#     compare_conditions = []
-#     for key, value_pattern in zip(pattern.keys, pattern.patterns):
-#         transformed_key = transform_pattern(key, subject, transform, ctx, True)
-#         if isinstance(value_pattern, ast.MatchAs):
-#             value_name = value_pattern.name or "_"
-#             value_from_subject = f"{subject}.get({transformed_key})"
-#             if value_pattern.pattern:
-#                 nested_pattern = transform_pattern(
-#                     value_pattern.pattern, subject, transform, ctx, True
-#                 )
-#                 compare_conditions.append(
-#                     f"({transformed_key} in {subject}) and ({value_from_subject} == {nested_pattern}) and ({value_name} := {value_from_subject})"
-#                 )
-#             else:
-#                 compare_conditions.append(
-#                     f"({transformed_key} in {subject}) and ({value_name} := {value_from_subject})"
-#                 )
-#         else:
-#             transformed_value = transform_pattern(
-#                 value_pattern, subject, transform, ctx, True
-#             )
-#             compare_conditions.append(
-#                 f"{transformed_key} in {subject} and {subject}.get({transformed_key}) == {transformed_value}"
-#             )
-#     if pattern.rest:
-#         matched_keys = [
-#             transform_pattern(key, subject, transform, ctx, True)
-#             for key in pattern.keys
-#         ]
-#         k_var = generate_name(prefix="__match_k_")
-#         v_var = generate_name(prefix="__match_v_")
-#         rest_dict = f"{{{k_var}: {v_var} for {k_var}, {v_var} in {subject}.items() if {k_var} not in [{', '.join(matched_keys)}]}}"
-#         compare_conditions.append(f"({pattern.rest!r} := {rest_dict})")
-#     combined_conditions = " and ".join(compare_conditions)
-#     return combined_conditions
-# elif isinstance(pattern, ast.MatchStar):
-#     return "True"
-# elif isinstance(pattern, ast.Constant):
-#     constant_value = repr(pattern.value)
-#     return constant_value if is_nested else f"{subject} == {constant_value}"
-# elif isinstance(pattern, ast.Name):
-#     return pattern.id
-# elif isinstance(pattern, ast.MatchAs):
-#     name = pattern.name or "_"
-#     as_condition = (
-#         transform_pattern(pattern.pattern, subject, transform, ctx, True)
-#         if pattern.pattern
-#         else "True"
-#     )
-#     return (
-#         f"({name} := {subject}) and {as_condition}"
-#         if pattern.pattern
-#         else f"({name} := {subject})"
-#     )
-# elif isinstance(pattern, ast.MatchOr):
-#     or_conditions = [
-#         transform_pattern(p, subject, transform, ctx, True)
-#         for p in pattern.patterns
-#     ]
-#     return (
-#         f"({' or '.join(or_conditions)})"
-#         if is_nested
-#         else f"{subject} == ({' or '.join(or_conditions)})"
-#     )
-# else:
-#     raise NotImplementedError(f"Pattern type {type(pattern)} not implemented")
-
+    raise SyntaxError("unreachable")
 
 @Handle(ast.Match)
 def handle_match(node: ast.Match, transform: TransformFunc, ctx: Context):
@@ -631,14 +470,3 @@ def handle_match(node: ast.Match, transform: TransformFunc, ctx: Context):
     )
 
     return f"[({subject_var} := {subject}), {cases}]"
-    # subject = transform(node.subject)
-
-    # def transform_case(case: ast.match_case):
-    #     condition = transform_pattern(case.pattern, subject, transform, ctx)
-    #     guard = f" and ({transform(case.guard)})" if case.guard else ""
-    #     body = ", ".join(transform(stmt) for stmt in case.body)
-    #     return f"(lambda: ({condition}{guard} and ({body})))()"
-
-    # cases = [transform_case(case) for case in node.cases]
-    # match_expression = " or ".join(cases)
-    # return f"({match_expression})"
