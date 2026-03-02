@@ -8,10 +8,12 @@ from typing import Callable, TypeVar
 
 from dataclasses import dataclass, field
 
+
 class Scope(enum.Enum):
     MODULE = enum.auto()
     CLASS = enum.auto()
     FUNCTION = enum.auto()
+
 
 @dataclass
 class CurrentFunction:
@@ -20,17 +22,22 @@ class CurrentFunction:
     return_hit_var: str = ""
     return_store_var: str = ""
 
+
 @dataclass
 class Context:
     in_loop: bool = False
     continue_var: str = ""
     break_var: str = ""
     scope: Scope = Scope.MODULE
-    current_function: CurrentFunction = field(default_factory=CurrentFunction)
+    current_function: CurrentFunction = field(
+        default_factory=CurrentFunction
+    )
     class_dict_var: str = ""  # for class scope, holds the dict where we can store annotations and other class-level info
     global_vars: set[str] = field(default_factory=set)
     nonlocal_vars: set[str] = field(default_factory=set)
-    assignment_temp_vars: dict[ast.Name, str] = field(default_factory=dict)  # maps variable names to their current temp var for assignment expressions
+    assignment_temp_vars: dict[ast.Name, str] = field(
+        default_factory=dict
+    )  # maps variable names to their current temp var for assignment expressions
     should_assign_nonnames_to_temp: bool = True
     should_assign_names: bool = True
     # for_names = dict[ast.Name, str]()  # names that are otherwise only in the comprehension
@@ -55,21 +62,24 @@ def has_node(node: ast.AST, target_type: type[ast.AST]):
             return True
     return False
 
+
 def generate_name(prefix=""):
     return next(generate_names(prefix=prefix))
-
 
 
 DEBUG = False  # for prefixes and logs, i suppose
 forbidden_names = set()
 
-def add_forbidden_names(*names: str): # this is weird
+
+def add_forbidden_names(*names: str):  # this is weird
     # print(names, "forbidden names")
     forbidden_names.update(names)
+
 
 def set_debug(debug: bool):
     global DEBUG
     DEBUG = debug
+
 
 def generate_names(n=1, prefix=""):
     possible_chars = string.ascii_letters
@@ -96,7 +106,11 @@ def prepend(contents: str):
     # valooe_loop = f"not {current_loop_and_function[1]} and not {current_loop_and_function[2]} and "
     valooe_loop = f"{ctx.continue_var} or "
     # input()
-    return f'({valooe if ctx.current_function.has_return else ""}{valooe_loop if ctx.continue_var else ""}{contents})' if any((ctx.current_function.has_return, ctx.continue_var)) else contents
+    return (
+        f'({valooe if ctx.current_function.has_return else ""}{valooe_loop if ctx.continue_var else ""}{contents})'
+        if any((ctx.current_function.has_return, ctx.continue_var))
+        else contents
+    )
 
 
 def Handle(*stmts: type[T]):
@@ -106,17 +120,21 @@ def Handle(*stmts: type[T]):
         real_func = (
             func
             if func.is_pure
-            else lambda *args, **kwargs: prepend(func(*args, **kwargs)) # TODO cast type to TransformFunc
+            else lambda *args, **kwargs: prepend(
+                func(*args, **kwargs)
+            )  # TODO cast type to TransformFunc
         )
         for stmt in stmts:
             stmt_handlers[stmt] = real_func
         return real_func
+
     return decorator
 
 
 def Pure(func: HandleFunc[T]):
     func.is_pure = True
     return func
+
 
 def ensure_assign(variable: str, value: str, ctx: Context, *, in_match=False):
     if ctx.scope == Scope.CLASS:
@@ -125,7 +143,8 @@ def ensure_assign(variable: str, value: str, ctx: Context, *, in_match=False):
         if in_match:
             return f"[({variable} := {value})]"
         return f"({variable} := {value})"
-    
+
+
 def reset():
     global ctx, DEBUG
     ctx.in_loop = False

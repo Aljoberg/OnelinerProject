@@ -11,7 +11,8 @@ from ..main import Handle
 @Handle(ast.With, ast.AsyncWith)
 def with_handler(
     node: ast.With | ast.AsyncWith, # can be inferred from decorator
-    transform: (node: ast.AST) -> str
+    transform: (node: ast.AST) -> str,
+    ctx: Context,
 ):
     ...
 ```

@@ -167,7 +167,7 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
 def handle_break(node: ast.Break, transform: TransformFunc, ctx: Context):
     if ctx.break_var is None:
         raise SyntaxError("break statement not inside a loop")
-    return f"[{ctx.break_var} := True, next(iter(()))]"
+    return f"[{ctx.break_var} := True]"
 
 
 @Handle(ast.Continue)

@@ -86,8 +86,8 @@ def handle_return(node: ast.Return, transform: TransformFunc, ctx: Context):
             # return f"({ctx.current_function.return_store_var}.append({value}) or ({ctx.current_function.return_hit_var} := True))"
         # else:
         #     return f"({ctx.current_function.return_hit_var} := True)"
-        if ctx.in_loop:
-            parts.append("next(iter(()))")
+        # if ctx.in_loop:
+        #     parts.append("next(iter(()))")
         
         return "[" + ", ".join(parts) + "]"
     else:
