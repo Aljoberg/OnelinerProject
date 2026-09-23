@@ -23,7 +23,7 @@ def handle_if(node: ast.If, transform: TransformFunc, ctx: Context):
     if orelse:
         return f"([{body}] if ({test}) else [{orelse}])"
     else:
-        return f"({test} and {body})"
+        return f"({test} and [{body}])"
 
 
 @Handle(ast.IfExp)

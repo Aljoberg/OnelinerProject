@@ -105,62 +105,20 @@ def handle_dict_comp(
     return f"{{{key}: {value} {comprehensions}}}"
 
 
-def _handle_format_spec(node: ast.JoinedStr, transform: TransformFunc) -> str:
-    parts = []
-    for part in node.values:
-        if isinstance(part, ast.Constant) and isinstance(part.value, str):
-            value = part.value
-            value = value.replace("\\", "\\\\")
-            value = value.replace("'", "\\'")
-            value = value.replace('"', '\\"')
-            value = value.replace("\n", "\\n")
-            parts.append(repr(value)[1:-1])
-        elif isinstance(part, ast.FormattedValue):
-            parts.append(_handle_formatted_value_inner(part, transform))
-        else:
-            raise ValueError(f"Unexpected node inside JoinedStr: {type(part).__name__}")
-    return "".join(parts)
-
-
-def _handle_formatted_value_inner(
-    node: ast.FormattedValue, transform: TransformFunc
-) -> str:
-    expr = transform(node.value)
-    if expr.startswith("{"):
-        expr = f" {expr}"
-
-    result = f"{{{expr}"
-
-    if node.conversion != -1:
-        result += f"!{chr(node.conversion)}"
-
-    if node.format_spec:
-        format_spec = _handle_format_spec(node.format_spec, transform)
-        result += f":{format_spec}"
-
-    result += "}"
-    return result
-
-
 @Handle(ast.JoinedStr)
 @Pure
 def handle_joined_str(node: ast.JoinedStr, transform: TransformFunc, ctx: Context):
-    parts = []
-    for part in node.values:
-        if isinstance(part, ast.Constant) and isinstance(part.value, str):
-            value = part.value.replace("{", "{{").replace("}", "}}")
-            parts.append(repr(value)[1:-1])
-        elif isinstance(part, ast.FormattedValue):
-            parts.append(_handle_formatted_value_inner(part, transform))
-        else:
-            raise ValueError(f"Unexpected node inside JoinedStr: {type(part).__name__}")
-    # return f'f"{parts[0]}"' if len(parts) == 1 else f'f"{"".join(parts)}"'
-    return f'f"{"".join(parts)}"'
+    # String concatenation avoids nested f-string quoting restrictions before 3.12.
+    parts = [transform(part) for part in node.values]
+    return "(" + " + ".join(parts) + ")" if parts else "''"
 
 
 @Handle(ast.FormattedValue)
 @Pure
-def handle_formatted_value(
-    node: ast.FormattedValue, transform: TransformFunc, ctx: Context
-):
-    return _handle_formatted_value_inner(node, transform)
+def handle_formatted_value(node: ast.FormattedValue, transform: TransformFunc, ctx: Context):
+    value = transform(node.value)
+    conversions = {ord("s"): "str", ord("r"): "repr", ord("a"): "ascii"}
+    if node.conversion != -1:
+        value = f"{conversions[node.conversion]}({value})"
+    spec = transform(node.format_spec) if node.format_spec else "''"
+    return f"format({value}, {spec})"

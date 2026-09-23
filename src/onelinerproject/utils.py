@@ -83,6 +83,12 @@ def set_debug(debug: bool):
 
 def generate_names(n=1, prefix=""):
     possible_chars = string.ascii_letters
+    if DEBUG:
+        prefix = "".join(char if char.isalnum() or char == "_" else "_" for char in prefix)
+        if prefix and not (prefix[0].isalpha() or prefix[0] == "_"):
+            prefix = "_" + prefix
+    else:
+        prefix = ""
     for _ in range(n):
         name_generator = (
             "".join(name)
@@ -90,15 +96,12 @@ def generate_names(n=1, prefix=""):
             for name in itertools.product(possible_chars, repeat=length)
         )
         name = next(
-            name
+            prefix + name
             for name in name_generator
-            if name not in forbidden_names and not keyword.iskeyword(name)
+            if prefix + name not in forbidden_names and not keyword.iskeyword(prefix + name)
         )
         forbidden_names.add(name)
-        if DEBUG:
-            yield prefix + name
-        else:
-            yield name
+        yield name
 
 
 def prepend(contents: str):

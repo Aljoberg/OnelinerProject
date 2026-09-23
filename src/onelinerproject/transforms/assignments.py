@@ -148,8 +148,7 @@ def handle_ann_assign(node: ast.AnnAssign, transform: TransformFunc, ctx: Contex
 @Handle(ast.NamedExpr)
 def handle_named_expr(node: ast.NamedExpr, transform: TransformFunc, ctx: Context):
     value = transform(node.value)
-    target = transform(node.target)
-    return ensure_assign(target, value, ctx)
+    return ensure_assign(node.target.id, value, ctx)
     # return f"({target} := {value})"
 
 

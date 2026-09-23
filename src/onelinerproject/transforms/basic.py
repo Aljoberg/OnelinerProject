@@ -67,7 +67,7 @@ def handle_slice(node: ast.Slice, transform: TransformFunc, ctx: Context):
     stop = transform(node.upper) if node.upper else ""
     step = transform(node.step) if node.step else ""
     if isinstance(node.parent.ctx, ast.Store):
-        return repr(slice(start, stop, step))
+        return f"slice({start or 'None'}, {stop or 'None'}, {step or 'None'})"
     if step:
         return f"{start}:{stop}:{step}"
     else:
