@@ -32,7 +32,7 @@ def code_to_oneliner(code: str, debug: bool = False) -> str:
         reset()
         try:
             tree = ast.parse(code)
-            compile(tree, "<input>", "exec")
+            compile(tree, "<input>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
             annotate_parents(tree)
             # Arguments, aliases, definitions, and captures are not ast.Name nodes.
             names = set()
@@ -60,7 +60,7 @@ def main(argv=None):
         parser.error("input and output must be different files")
     try:
         result = code_to_oneliner(args.input.read_text(encoding="utf-8"), debug=args.debug)
-        compile(result, str(args.output), "exec")
+        compile(result, str(args.output), "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
         args.output.write_text(result + "\n", encoding="utf-8")
     except (OSError, UnicodeError, SyntaxError, NotImplementedError) as exc:
         parser.exit(1, f"{parser.prog}: {exc}\n")
@@ -73,7 +73,7 @@ def oneline_main(argv=None):
     args = parser.parse_args(argv)
     try:
         result = code_to_oneliner(args.source, debug=args.debug)
-        compile(result, "<oneline>", "exec")
+        compile(result, "<oneline>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
     except (SyntaxError, NotImplementedError) as exc:
         parser.exit(1, f"{parser.prog}: {exc}\n")
     print(result)

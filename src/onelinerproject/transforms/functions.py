@@ -162,6 +162,8 @@ def handle_lambda(node: ast.Lambda, transform: TransformFunc, ctx: Context):
 @Handle(ast.Await)
 def handle_await(node: ast.Await, transform: TransformFunc, ctx: Context):
     value = transform(node.value)
+    if ctx.scope == Scope.MODULE:
+        return f"(await {value})"
     return f"(yield from {value})"
 
 @Handle(ast.Call)

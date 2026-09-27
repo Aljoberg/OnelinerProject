@@ -40,6 +40,10 @@ overwritten only after conversion and syntax validation succeed. To run it:
 python output_code.py
 ```
 
+Top-level `await` is accepted by the transformer for async runners such as the
+website's Pyodide playground. A generated file containing top-level `await`
+needs an async runner; plain `python output_code.py` does not enable it.
+
 You can also use the API without reading or writing files:
 
 ```python
