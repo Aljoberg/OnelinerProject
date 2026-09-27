@@ -79,6 +79,8 @@ def handle_compare(node: ast.Compare, transform: TransformFunc, ctx: Context):
 def handle_unary_op(node: ast.UnaryOp, transform: TransformFunc, ctx: Context):
     op_str = transform(node.op)
     operand_str = transform(node.operand)
+    if isinstance(node.op, ast.Not):
+        return f"{op_str} {operand_str}"
     return f"{op_str}{operand_str}"
 
 

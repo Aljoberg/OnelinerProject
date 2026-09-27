@@ -105,15 +105,14 @@ def generate_names(n=1, prefix=""):
 
 
 def prepend(contents: str):
-    valooe = f"{ctx.current_function.return_hit_var} or "  # <3.12 moment
-    # valooe_loop = f"not {current_loop_and_function[1]} and not {current_loop_and_function[2]} and "
-    valooe_loop = f"{ctx.continue_var} or "
-    # input()
-    return (
-        f'({valooe if ctx.current_function.has_return else ""}{valooe_loop if ctx.continue_var else ""}{contents})'
-        if any((ctx.current_function.has_return, ctx.continue_var))
-        else contents
-    )
+    guards = []
+    if ctx.current_function.has_return:
+        guards.append(ctx.current_function.return_hit_var)
+    if ctx.break_var:
+        guards.append(ctx.break_var)
+    if ctx.continue_var:
+        guards.append(ctx.continue_var)
+    return f"({' or '.join([*guards, contents])})" if guards else contents
 
 
 def Handle(*stmts: type[T]):

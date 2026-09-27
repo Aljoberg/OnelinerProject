@@ -1,5 +1,4 @@
 import ast
-from copy import deepcopy
 from ..utils import Handle, Scope, TransformFunc, ensure_assign, generate_name, Context, has_node
 
 
@@ -103,13 +102,29 @@ def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
 
 @Handle(ast.AugAssign)
 def handle_aug_assign(node: ast.AugAssign, transform: TransformFunc, ctx: Context):
-    # name = name op value
-    left = deepcopy(node.target)
-    left.ctx = ast.Load()  # treat target as load to get the current value
-    assignment = ast.Assign(
-        targets=[node.target], value=ast.BinOp(left=left, op=node.op, right=node.value)
-    )
-    return transform(assignment)
+    operation = {
+        ast.Add: "iadd", ast.Sub: "isub", ast.Mult: "imul",
+        ast.MatMult: "imatmul", ast.Div: "itruediv", ast.FloorDiv: "ifloordiv",
+        ast.Mod: "imod", ast.Pow: "ipow", ast.LShift: "ilshift",
+        ast.RShift: "irshift", ast.BitOr: "ior", ast.BitXor: "ixor",
+        ast.BitAnd: "iand",
+    }[type(node.op)]
+    rhs = transform(node.value)
+    target = node.target
+    if isinstance(target, ast.Name):
+        return choose_assign(target, f"__import__('operator').{operation}({target.id}, {rhs})", transform, ctx)
+    object_name = generate_name(prefix="__aug_object_")
+    object_expr = transform(target.value)
+    if isinstance(target, ast.Attribute):
+        key = repr(target.attr)
+        result = f"setattr({object_name} := {object_expr}, {key}, __import__('operator').{operation}(getattr({object_name}, {key}), {rhs}))"
+        return f"{result}"
+    if isinstance(target, ast.Subscript):
+        key_name = generate_name(prefix="__aug_key_")
+        key_expr = transform(target.slice)
+        result = f"({object_name} := {object_expr}).__setitem__({key_name}, __import__('operator').{operation}({object_name}[{key_name}], {rhs}))"
+        return f"({key_name} := {key_expr}), {result}"
+    raise NotImplementedError(f"Augmented assignment target {type(target).__name__}")
 
 
 @Handle(ast.AnnAssign)
@@ -122,7 +137,7 @@ def handle_ann_assign(node: ast.AnnAssign, transform: TransformFunc, ctx: Contex
             value = transform(node.value)
             if ctx.scope == Scope.MODULE:
                 # can save to __annotations__
-                return f"[{choose_assign(target, value, transform, ctx)}, __annotations__.update({{{target.id!r}: {annotation}}})]"
+                return f"[{choose_assign(target, value, transform, ctx)}, globals().setdefault('__annotations__', {{}}).update({{{target.id!r}: {annotation}}})]"
             elif ctx.scope == Scope.CLASS:
                 # can save to __annotations__ of the class dict
                 return f"[{choose_assign(target, value, transform, ctx)}, {ctx.class_dict_var}.setdefault('__annotations__', {{}}).update({{{target.id!r}: {annotation}}})]"
@@ -132,7 +147,7 @@ def handle_ann_assign(node: ast.AnnAssign, transform: TransformFunc, ctx: Contex
                 return "(" + choose_assign(target, value, transform, ctx) + ")"
         else:
             if ctx.scope == Scope.MODULE:
-                return f"__annotations__.update({{{target.id!r}: {annotation}}})"
+                return f"globals().setdefault('__annotations__', {{}}).update({{{target.id!r}: {annotation}}})"
             elif ctx.scope == Scope.CLASS:
                 return f"{ctx.class_dict_var}.setdefault('__annotations__', {{}}).update({{{target.id!r}: {annotation}}})"
             # return f"{target.id}  # type: {annotation}"

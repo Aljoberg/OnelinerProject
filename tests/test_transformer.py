@@ -13,8 +13,8 @@ from onelinerproject.main import code_to_oneliner
 
 
 class TransformerTests(unittest.TestCase):
-    def assert_equivalent(self, source):
-        generated = code_to_oneliner(source)
+    def assert_equivalent(self, source, *, debug=False):
+        generated = code_to_oneliner(source, debug=debug)
         self.assertNotIn('\n', generated)
         outputs = []
         for code in (source, generated):
@@ -31,6 +31,31 @@ class TransformerTests(unittest.TestCase):
     def test_condition_guards_entire_body(self):
         self.assert_equivalent('if False:\n print(1)\n print(2)\nprint(3)')
         self.assert_equivalent('if True:\n print(1)\n print(2)')
+
+    def test_for_continue_and_else(self):
+        self.assert_equivalent('for number in range(5):\n if number % 2 == 0:\n  continue\n print(number)\nelse:\n print("done")')
+        self.assert_equivalent('for number in range(5):\n if number % 2 == 0:\n  continue\n print(number)', debug=True)
+        self.assert_equivalent('items = [1, 2, 3]\nfor item in items:\n if item == 2:\n  continue\n print(item)\nprint("after")')
+        self.assert_equivalent('number = 0\nwhile number < 5:\n number += 1\n if number % 2 == 0:\n  continue\n print(number)\nelse:\n print("done")')
+
+    def test_break_skips_remaining_body_and_iterations(self):
+        self.assert_equivalent('for number in range(5):\n if number == 2:\n  break\n print(number)\nelse:\n print("complete")\nprint("done")')
+        self.assert_equivalent('number = 0\nwhile number < 5:\n number += 1\n if number == 2:\n  break\n print(number)\nprint("done")')
+        self.assert_equivalent('items = iter([0, 1, 2, 3])\nfor item in items:\n if item == 1:\n  break\nprint(next(items))')
+        self.assert_equivalent('for outer in range(2):\n for inner in range(3):\n  if inner == 1:\n   break\n print(outer)')
+        self.assert_equivalent('for number in range(6):\n match number:\n  case 2:\n   continue\n  case 4:\n   break\n print(number)\nelse:\n print("complete")')
+
+    def test_function_defined_in_loop_has_own_control_flow(self):
+        self.assert_equivalent('for number in range(2):\n def show():\n  print("inside")\n if number == 1:\n  continue\nshow()')
+
+    def test_match_chooses_first_case_and_groups_or_patterns(self):
+        self.assert_equivalent('commands = [["say", "hello"], ["print", "world"]]\nfor command in commands:\n match command:\n  case ["say" | "print", message]:\n   print(message)\n  case _:\n   print("fallback")')
+        self.assert_equivalent('match "start":\n case "start":\n  print("started")\n case _:\n  print("fallback")')
+        self.assert_equivalent('match ["say", "hello"]:\n case ["say" | "print", message]:\n  print(message)', debug=True)
+        self.assert_equivalent('match 3:\n case value if value < 0:\n  print("negative")\n case value if value > 0:\n  print("positive", value)\n case _:\n  print("zero")')
+        self.assert_equivalent('for value in [None, True, False]:\n match value:\n  case None:\n   print("none")\n  case True:\n   print("true")\n  case False:\n   print("false")')
+        self.assert_equivalent('for command in [["start"], {"action": "quit"}]:\n match command:\n  case ["start"]:\n   print("start")\n  case {"action": "quit"}:\n   print("quit")')
+        self.assert_equivalent('match [1, 2, 3, 4]:\n case [first, *middle, last]:\n  print(first, middle, last)')
 
     def test_walrus_keeps_original_name(self):
         self.assert_equivalent('print((value := 7))\nprint(value)')

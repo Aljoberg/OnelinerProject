@@ -21,8 +21,15 @@ def handle_classdef(node: ast.ClassDef, transform: TransformFunc, ctx: Context):
 
     cls = f"__import__('types').new_class({node.name!r}, ({bases}), {{{kwds_code}}}, lambda {ctx.class_dict_var}: [{body}])"
 
-    for decorator in node.decorator_list:
-        cls = f"({transform(decorator)})({cls})"
+    if node.decorator_list:
+        decorators = [(generate_name(prefix="__decorator_"), transform(decorator))
+                      for decorator in node.decorator_list]
+        for name, _ in reversed(decorators):
+            cls = f"{name}({cls})"
+        cls = "[" + ", ".join(
+            [f"({name} := {expression})" for name, expression in decorators]
+            + [cls]
+        ) + "][-1]"
 
     ctx.scope = prev_scope
     ctx.class_dict_var = prev_class_dict_var

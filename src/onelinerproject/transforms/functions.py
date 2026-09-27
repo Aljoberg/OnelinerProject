@@ -16,6 +16,13 @@ def handle_function_def(
         ctx.current_function.return_hit_var = generate_name(prefix="__return_hit_")
     
     ctx.scope = Scope.FUNCTION
+
+    prev_break_var = ctx.break_var
+    prev_continue_var = ctx.continue_var
+    prev_in_loop = ctx.in_loop
+    ctx.break_var = ""
+    ctx.continue_var = ""
+    ctx.in_loop = False
     
     vararg = f"*{node.args.vararg.arg}" if node.args.vararg else ""
     kwarg = f"**{node.args.kwarg.arg}" if node.args.kwarg else ""
@@ -24,20 +31,24 @@ def handle_function_def(
     body_statements = [transform(stmt) for stmt in node.body]
     body = ", ".join(body_statements)
     
-    pos_args = ", ".join(
+    positional = node.args.posonlyargs + node.args.args
+    positional_text = [
         f"{arg.arg}{f'={transform(val)}' if val else ''}"
         for arg, val in zip(
-            node.args.args,
-            [None] * (len(node.args.args) - len(node.args.defaults)) + node.args.defaults
+            positional,
+            [None] * (len(positional) - len(node.args.defaults)) + node.args.defaults
         )
-    )
+    ]
+    if node.args.posonlyargs:
+        positional_text.insert(len(node.args.posonlyargs), "/")
+    pos_args = ", ".join(positional_text)
 
     kw_args = ", ".join(
         f"{arg.arg}{f'={transform(val)}' if val else ''}"
         for arg, val in zip(node.args.kwonlyargs, node.args.kw_defaults)
     )
 
-    pos_args = ", ".join(filter(None, [pos_args, vararg, kw_args, kwarg]))
+    pos_args = ", ".join(filter(None, [pos_args, vararg or ("*" if kw_args else ""), kw_args, kwarg]))
     # if vkwargs:
     #     pos_args = pos_args + (", " if pos_args else "") + ", ".join(vkwargs)
 
@@ -64,9 +75,19 @@ def handle_function_def(
     
     ctx.current_function = prev_current_function
     ctx.scope = prev_scope
+    ctx.break_var = prev_break_var
+    ctx.continue_var = prev_continue_var
+    ctx.in_loop = prev_in_loop
 
-    for decorator in node.decorator_list:
-        func_expression = f"({transform(decorator)})({func_expression})"
+    if node.decorator_list:
+        decorators = [(generate_name(prefix="__decorator_"), transform(decorator))
+                      for decorator in node.decorator_list]
+        for name, _ in reversed(decorators):
+            func_expression = f"{name}({func_expression})"
+        func_expression = "[" + ", ".join(
+            [f"({name} := {expression})" for name, expression in decorators]
+            + [func_expression]
+        ) + "][-1]"
     
     final_expr = ', '.join(filter(None, [func_expression, toggle_async, annotations_code]))
     
@@ -97,7 +118,13 @@ def handle_return(node: ast.Return, transform: TransformFunc, ctx: Context):
 @Handle(ast.Lambda)
 def handle_lambda(node: ast.Lambda, transform: TransformFunc, ctx: Context):
     prev_scope = ctx.scope
+    prev_break_var = ctx.break_var
+    prev_continue_var = ctx.continue_var
+    prev_in_loop = ctx.in_loop
     ctx.scope = Scope.FUNCTION
+    ctx.break_var = ""
+    ctx.continue_var = ""
+    ctx.in_loop = False
     vararg = f"*{node.args.vararg.arg}" if node.args.vararg else ""
     kwarg = f"**{node.args.kwarg.arg}" if node.args.kwarg else ""
     
@@ -105,22 +132,29 @@ def handle_lambda(node: ast.Lambda, transform: TransformFunc, ctx: Context):
     body = transform(node.body)
     # body = ", ".join(body)
     
-    pos_args = ", ".join(
+    positional = node.args.posonlyargs + node.args.args
+    positional_text = [
         f"{arg.arg}{f'={transform(val)}' if val else ''}"
         for arg, val in zip(
-            node.args.args,
-            [None] * (len(node.args.args) - len(node.args.defaults)) + node.args.defaults
+            positional,
+            [None] * (len(positional) - len(node.args.defaults)) + node.args.defaults
         )
-    )
+    ]
+    if node.args.posonlyargs:
+        positional_text.insert(len(node.args.posonlyargs), "/")
+    pos_args = ", ".join(positional_text)
 
     kw_args = ", ".join(
         f"{arg.arg}{f'={transform(val)}' if val else ''}"
         for arg, val in zip(node.args.kwonlyargs, node.args.kw_defaults)
     )
 
-    pos_args = ", ".join(filter(None, [pos_args, vararg, kw_args, kwarg]))
+    pos_args = ", ".join(filter(None, [pos_args, vararg or ("*" if kw_args else ""), kw_args, kwarg]))
 
     ctx.scope = prev_scope
+    ctx.break_var = prev_break_var
+    ctx.continue_var = prev_continue_var
+    ctx.in_loop = prev_in_loop
     
     return f"(lambda {pos_args}: {body})"
 

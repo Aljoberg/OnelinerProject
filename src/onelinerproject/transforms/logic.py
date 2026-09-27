@@ -1,5 +1,4 @@
 import ast
-import itertools
 from ..utils import (
     Context,
     Handle,
@@ -9,6 +8,20 @@ from ..utils import (
     has_node,
     generate_name,
 )
+
+
+def loop_has_node(body: list[ast.stmt], target_type: type[ast.AST]) -> bool:
+    boundaries = (ast.For, ast.While, ast.AsyncFor, ast.FunctionDef,
+                  ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
+    def visit(node: ast.AST) -> bool:
+        if isinstance(node, target_type):
+            return True
+        if isinstance(node, boundaries):
+            return False
+        return any(visit(child) for child in ast.iter_child_nodes(node))
+
+    return any(visit(statement) for statement in body)
 
 
 @Handle(ast.If)
@@ -36,8 +49,12 @@ def handle_ifexp(node: ast.IfExp, transform: TransformFunc, ctx: Context):
 
 @Handle(ast.For)
 def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
-    has_break = has_node(node, ast.Break)
-    has_continue = has_node(node, ast.Continue)
+    has_break = loop_has_node(node.body, ast.Break)
+    has_continue = loop_has_node(node.body, ast.Continue)
+
+    iter_ = transform(node.iter)
+    orelse_statements = [f"({transform(stmt)})" for stmt in node.orelse]
+    orelse = ", ".join(orelse_statements) if orelse_statements else None
 
     prev_break_var = ctx.break_var
     prev_continue_var = ctx.continue_var
@@ -53,17 +70,19 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
         continue_var = generate_name(prefix="__continue_for_")
         ctx.continue_var = continue_var
 
-    iter_ = transform(node.iter)
     body_statements = [f"({transform(stmt)})" for stmt in node.body]
     body = ", ".join(body_statements)
-
-    orelse_statements = [f"({transform(stmt)})" for stmt in node.orelse]
-    orelse = ", ".join(orelse_statements) if orelse_statements else None
 
     result: list[str] = ["(["]
 
     if has_break:
         result.append(f"({ctx.break_var} := False), ")
+        iterator_var, sentinel_var = generate_names(2, prefix="__for_iterator_")
+        result.append(f"({iterator_var} := iter({iter_})), ({sentinel_var} := object()), ")
+        iter_ = (
+            f"iter(lambda: {sentinel_var} if {ctx.break_var} else "
+            f"next({iterator_var}, {sentinel_var}), {sentinel_var})"
+        )
 
     result.append("[[")
     # print(ctx.assignment_temp_vars)
@@ -107,8 +126,12 @@ def handle_for(node: ast.For, transform: TransformFunc, ctx: Context):
 
 @Handle(ast.While)
 def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
-    has_break = has_node(node, ast.Break)
-    has_continue = has_node(node, ast.Continue)
+    has_break = loop_has_node(node.body, ast.Break)
+    has_continue = loop_has_node(node.body, ast.Continue)
+
+    test = transform(node.test)
+    orelse_statements = [f"({transform(stmt)})" for stmt in node.orelse]
+    orelse = ", ".join(orelse_statements) if orelse_statements else None
 
     prev_break_var = ctx.break_var
     prev_continue_var = ctx.continue_var
@@ -124,15 +147,13 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
         continue_var = generate_name(prefix="__continue_while_")
         ctx.continue_var = continue_var
 
-    test = transform(node.test)
     body_statements = [f"({transform(stmt)})" for stmt in node.body]
+    if has_continue:
+        body_statements.insert(0, f"({ctx.continue_var} := False)")
     body = "[" + ", ".join(body_statements) + "]"
 
     inf_var, test_var = generate_names(2, prefix="__unused_loop_while_")
     body_var = generate_name(prefix="__body_while_")
-
-    orelse_statements = [f"({transform(stmt)})" for stmt in node.orelse]
-    orelse = ", ".join(orelse_statements) if orelse_statements else None
 
     result: list[str] = ["["]
 
@@ -152,7 +173,7 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
     result.append(f"[None for {test_var} in iter(lambda: next({body_var}), False)]")
 
     if orelse:
-        result.append(f", {ctx.break_var} or [{orelse}]]")
+        result.append(f", {ctx.break_var} or [{orelse}]]" if has_break else f", [{orelse}]]")
     else:
         result.append("]")
 
@@ -180,10 +201,10 @@ def handle_continue(node: ast.Continue, transform: TransformFunc, ctx: Context):
 @Handle(ast.Raise)
 def handle_raise(node: ast.Raise, transform: TransformFunc, ctx: Context):
     temp_name = generate_name(prefix="__raise_")
-    exc = transform(node.exc) if node.exc else "None"
+    exc = transform(node.exc) if node.exc else "__import__('sys').exc_info()[1]"
     cause = transform(node.cause) if node.cause else "None"
     if node.cause:
-        return f"(_ for _ in ()).throw(setattr(({temp_name} := {exc}()), '__cause__', {cause}) or {temp_name})"
+        return f"(_ for _ in ()).throw(setattr(({temp_name} := {exc}), '__cause__', {cause}) or {temp_name})"
     else:
         return f"(_ for _ in ()).throw({exc})"
 
@@ -302,28 +323,37 @@ def handle_try(node: ast.Try, transform: TransformFunc, ctx: Context):
         else ""
     )
 
-    handler_checks = (
-        " ".join(
-            f"(*{handler_vars[i]},) "
-            + (
-                f"if isinstance({exc_in_exit_var}, {exc_type}) else "
-                if exc_type
-                else ""
-            )
-            for i, (exc_type, _, _) in enumerate(handlers)
-        )
-        + "None"
-    )
+    handler_checks = "None"
+    for handler_var, (exc_type, _, _) in reversed(list(zip(handler_vars, handlers))):
+        if exc_type:
+            handler_checks = f"((*{handler_var},) if isinstance({exc_in_exit_var}, {exc_type}) else ({handler_checks}))"
+        else:
+            handler_checks = f"(*{handler_var},)"
 
-    exit_lambda = f"""lambda {self_var}, {unused_exc_type_var}, {exc_in_exit_var}, {unused_traceback_var}: [{exc_in_exit_var} and ({exc_variable}.append({exc_in_exit_var}) or ({handler_checks}{finalbody and f' and (*{finally_variable},)'}))]"""
+    handled_var = generate_name(prefix="__try_handled_")
+    handler_result = f"({handled_var} := ({handler_checks}))"
+    if finalbody:
+        handler_result = f"({handler_result}, (*{finally_variable},), bool({handled_var}))[-1]"
+    else:
+        handler_result = f"bool({handler_result})"
+    exit_lambda = f"lambda {self_var}, {unused_exc_type_var}, {exc_in_exit_var}, {unused_traceback_var}: {exc_in_exit_var} is not None and ({exc_variable}.append({exc_in_exit_var}) or {handler_result})"
 
+    result_parts = [f"*{try_variable}"]
+    if orelse_body:
+        result_parts.append(f"*{else_variable}")
+    if finalbody:
+        result_parts.append(f"*{finally_variable}")
+    result_tuple = ", ".join(result_parts) + ","
+
+    setup = ", ".join(part for part in (
+        f"{exc_variable} := []", f"{try_variable} := ({try_body})",
+        handlers_code, orelse_code.rstrip(", "), finally_code.rstrip(", "),
+    ) if part)
     try_except_func = f"""(\
-{exc_variable} := [], {try_variable} := ({try_body}), \
-{handlers_code}, \
-{orelse_code}{finally_code}type("{class_name}", (__import__("contextlib").ContextDecorator,), {{\
+{setup}, type("{class_name}", (__import__("contextlib").ContextDecorator,), {{\
 "__enter__": lambda {self_var}: {self_var}, \
 "__exit__": {exit_lambda}\
-}})()(lambda: (*{try_variable},{orelse_body and f' *{else_variable}'}{finalbody and (f', *{finally_variable}' if orelse_body else f', *{finally_variable}')}))())"""
+}})()(lambda: ({result_tuple}))())"""
 
     return try_except_func
 
@@ -333,21 +363,22 @@ def transform_pattern(
 ):
 
     if isinstance(pattern, ast.MatchOr):
-        return " or ".join(
-            transform_pattern(p, subject, transform, ctx) for p in pattern.patterns
-        )
+        return "(" + " or ".join(
+            f"({transform_pattern(p, subject, transform, ctx)})"
+            for p in pattern.patterns
+        ) + ")"
     elif isinstance(pattern, ast.MatchAs):
-        name = pattern.name or "_"
         as_condition = (
             transform_pattern(pattern.pattern, subject, transform, ctx)
             if pattern.pattern
             else "True"
         )
-        return (
-            f"{as_condition} and {ensure_assign(name, subject, ctx, in_match=True)}"
-            if pattern.pattern
-            else ensure_assign(name, subject, ctx, in_match=True)
-        )
+        if pattern.name is None:
+            return as_condition
+        assignment = ensure_assign(pattern.name, subject, ctx, in_match=True)
+        return f"({as_condition}) and {assignment}" if pattern.pattern else assignment
+    elif isinstance(pattern, ast.MatchSingleton):
+        return f"{subject} is {pattern.value!r}"
     elif isinstance(pattern, ast.MatchValue):
         comparison_value = transform(pattern.value)
         op = (
@@ -370,34 +401,22 @@ def transform_pattern(
                 for i, el in enumerate(pattern.patterns)
             ]
         else:
-            non_star = [
-                (i, el)
-                for i, el in enumerate(pattern.patterns)
-                if not isinstance(el, ast.MatchStar)
-            ]
-            leading_no_star = list(
-                itertools.takewhile(
-                    lambda el: not isinstance(el, ast.MatchStar), pattern.patterns
-                )
-            )
-            star_pattern = next(
-                (el for el in pattern.patterns if isinstance(el, ast.MatchStar))
-            )
-            trailing_no_star = list(
-                itertools.dropwhile(
-                    lambda el: not isinstance(el, ast.MatchStar), pattern.patterns
-                )
-            )
+            star_index = next(i for i, el in enumerate(pattern.patterns)
+                              if isinstance(el, ast.MatchStar))
+            leading_no_star = pattern.patterns[:star_index]
+            star_pattern = pattern.patterns[star_index]
+            trailing_no_star = pattern.patterns[star_index + 1:]
 
-            parts.append(f"len({subject}) >= {len(non_star)}")
+            parts.append(f"len({subject}) >= {len(leading_no_star) + len(trailing_no_star)}")
             parts += [
                 transform_pattern(el, f"{subject}[{i}]", transform, ctx)
                 for i, el in enumerate(leading_no_star)
             ]
+            slice_end = f"-{len(trailing_no_star)}" if trailing_no_star else ""
             parts.append(
                 transform_pattern(
                     star_pattern,
-                    f"{subject}[{len(leading_no_star)}:{len(pattern.patterns) - len(trailing_no_star)}]",
+                    f"{subject}[{len(leading_no_star)}:{slice_end}]",
                     transform,
                     ctx,
                 )
@@ -459,14 +478,22 @@ def transform_pattern(
 
 @Handle(ast.Match)
 def handle_match(node: ast.Match, transform: TransformFunc, ctx: Context):
-    # uh oh
     subject = transform(node.subject)
 
     subject_var = generate_name(prefix="__match_subject_")
 
-    cases = ", ".join(
-        f"({transform_pattern(case.pattern, subject_var, transform, ctx)}){f' and ({transform(case.guard)})' if case.guard else ''} and ([{', '.join(transform(stmt) for stmt in case.body)}])"
-        for case in node.cases
-    )
+    branches = []
+    for case in node.cases:
+        condition = transform_pattern(case.pattern, subject_var, transform, ctx)
+        if case.guard:
+            condition = f"({condition}) and ({transform(case.guard)})"
+        body = ", ".join(transform(stmt) for stmt in case.body)
+        branches.append((condition, body))
+
+    # A match chooses the first successful case. Nesting conditional
+    # expressions keeps later patterns and guards unevaluated after a match.
+    cases = "None"
+    for condition, body in reversed(branches):
+        cases = f"([{body}] if ({condition}) else {cases})"
 
     return f"[({subject_var} := {subject}), {cases}]"
