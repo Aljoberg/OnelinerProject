@@ -14,6 +14,18 @@ From the repository root, install the package in editable mode:
 python -m pip install -e .
 ```
 
+After installation, convert source text from any directory and print the
+generated expression:
+
+```sh
+oneline "a = 1"
+```
+
+For multiple statements, pass a string containing newline characters. Use
+`oneline --debug "a = 1"` for descriptive generated variable names. If your
+shell cannot find `oneline`, make sure the Python environment's scripts
+directory is on your `PATH` (or activate that environment).
+
 To convert a Python file, run:
 
 ```sh

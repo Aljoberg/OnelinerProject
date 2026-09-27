@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from onelinerproject.main import code_to_oneliner
+from onelinerproject.main import code_to_oneliner, oneline_main
 
 
 class TransformerTests(unittest.TestCase):
@@ -114,6 +114,27 @@ class TransformerTests(unittest.TestCase):
             same_file = subprocess.run(command[:-1] + [str(source)], env=env, capture_output=True, text=True)
             self.assertNotEqual(same_file.returncode, 0)
             self.assertEqual(source.read_text(), 'return 1')
+
+    def test_oneline_prints_source_argument(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            oneline_main(['a = 1'])
+        self.assertEqual(output.getvalue(), code_to_oneliner('a = 1') + '\n')
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            oneline_main(['--debug', 'a = 1'])
+        self.assertEqual(output.getvalue(), code_to_oneliner('a = 1', debug=True) + '\n')
+
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error), self.assertRaises(SystemExit) as exit_result:
+            oneline_main(['return 1'])
+        self.assertEqual(exit_result.exception.code, 1)
+        self.assertIn('return', error.getvalue())
+
+    def test_oneline_entry_point_is_packaged(self):
+        self.assertIn('oneline = "onelinerproject.main:oneline_main"',
+                      (ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':

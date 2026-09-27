@@ -24,6 +24,7 @@ Issues = "https://github.com/Aljoberg/OnelinerProject/issues"
 
 [project.scripts]
 oneliner = "onelinerproject.main:main"
+oneline = "onelinerproject.main:oneline_main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/onelinerproject"]

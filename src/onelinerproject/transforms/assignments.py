@@ -1,6 +1,13 @@
 import ast
-from ..utils import Handle, Scope, TransformFunc, ensure_assign, generate_name, Context, has_node
-
+from ..utils import (
+    Handle,
+    Scope,
+    TransformFunc,
+    ensure_assign,
+    generate_name,
+    Context,
+    has_node,
+)
 
 # _AUG_OP_MAP = {
 #     ast.Add: "+",
@@ -52,7 +59,7 @@ def choose_assign(
     elif isinstance(node, ast.Attribute):
         return f"setattr({transform(node.value)}, {node.attr!r}, {value})"
     elif isinstance(node, ast.Subscript):
-        return f"{transform(node.value)}.__setitem__({transform(node.slice)}, {value})"
+        return f"__import__('operator').setitem({transform(node.value)}, {transform(node.slice)}, {value})"
     else:
         raise SyntaxError("????")
 
@@ -64,7 +71,7 @@ def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
     # print(node.targets)
     out = []
     has_walrus = has_node(node, ast.NamedExpr)
-    if has_walrus or len(node.targets) > 1:
+    if has_walrus or len(node.targets) > 1 or isinstance(node.targets[0], (ast.Attribute, ast.Subscript)):
         value = generate_name(prefix="__assign_tmp_")
         out.append(f"({value} := {orig_value})")
     else:
@@ -103,27 +110,41 @@ def handle_assign(node: ast.Assign, transform: TransformFunc, ctx: Context):
 @Handle(ast.AugAssign)
 def handle_aug_assign(node: ast.AugAssign, transform: TransformFunc, ctx: Context):
     operation = {
-        ast.Add: "iadd", ast.Sub: "isub", ast.Mult: "imul",
-        ast.MatMult: "imatmul", ast.Div: "itruediv", ast.FloorDiv: "ifloordiv",
-        ast.Mod: "imod", ast.Pow: "ipow", ast.LShift: "ilshift",
-        ast.RShift: "irshift", ast.BitOr: "ior", ast.BitXor: "ixor",
+        ast.Add: "iadd",
+        ast.Sub: "isub",
+        ast.Mult: "imul",
+        ast.MatMult: "imatmul",
+        ast.Div: "itruediv",
+        ast.FloorDiv: "ifloordiv",
+        ast.Mod: "imod",
+        ast.Pow: "ipow",
+        ast.LShift: "ilshift",
+        ast.RShift: "irshift",
+        ast.BitOr: "ior",
+        ast.BitXor: "ixor",
         ast.BitAnd: "iand",
     }[type(node.op)]
     rhs = transform(node.value)
     target = node.target
     if isinstance(target, ast.Name):
-        return choose_assign(target, f"__import__('operator').{operation}({target.id}, {rhs})", transform, ctx)
+        return choose_assign(
+            target,
+            f"__import__('operator').{operation}({target.id}, {rhs})",
+            transform,
+            ctx,
+        )
     object_name = generate_name(prefix="__aug_object_")
     object_expr = transform(target.value)
     if isinstance(target, ast.Attribute):
         key = repr(target.attr)
         result = f"setattr({object_name} := {object_expr}, {key}, __import__('operator').{operation}(getattr({object_name}, {key}), {rhs}))"
-        return f"{result}"
+        return result
     if isinstance(target, ast.Subscript):
         key_name = generate_name(prefix="__aug_key_")
+        operator_import_name = generate_name(prefix="__operator_import_")
         key_expr = transform(target.slice)
-        result = f"({object_name} := {object_expr}).__setitem__({key_name}, __import__('operator').{operation}({object_name}[{key_name}], {rhs}))"
-        return f"({key_name} := {key_expr}), {result}"
+        result = f"({operator_import_name} := __import__('operator')).setitem({object_name} := {object_expr}, {key_name} := {key_expr}, {operator_import_name}.{operation}({object_name}[{key_name}], {rhs}))"
+        return result
     raise NotImplementedError(f"Augmented assignment target {type(target).__name__}")
 
 
@@ -172,7 +193,7 @@ def handle_delete(node: ast.Delete, transform: TransformFunc, ctx: Context):
     out = []
     for target in node.targets:
         if isinstance(target, ast.Name):
-            out.append(f"exec({repr(f'del {target.id}')})") # TODO
+            out.append(f"exec({repr(f'del {target.id}')})")  # TODO
         elif isinstance(target, ast.Attribute):
             obj = transform(target.value)
             attr = target.attr
@@ -180,7 +201,6 @@ def handle_delete(node: ast.Delete, transform: TransformFunc, ctx: Context):
         elif isinstance(target, ast.Subscript):
             obj = transform(target.value)
             key = transform(target.slice)
-            out.append(f"{obj}.__delitem__({key})")
-    
+            out.append(f"__import__('operator').delitem({obj}, {key})")
 
     return f"[{', '.join(out)}]"

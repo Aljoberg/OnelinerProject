@@ -51,7 +51,7 @@ def code_to_oneliner(code: str, debug: bool = False) -> str:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Convert Python source to a one-liner.")
+    parser = argparse.ArgumentParser(description="Convert Python source to a one-liner")
     parser.add_argument("input", nargs="?", type=Path, default=Path("test_code.py"))
     parser.add_argument("-o", "--output", type=Path, default=Path("output_code.py"))
     parser.add_argument("--debug", action="store_true", help="Use descriptive generated names")
@@ -64,6 +64,19 @@ def main(argv=None):
         args.output.write_text(result + "\n", encoding="utf-8")
     except (OSError, UnicodeError, SyntaxError, NotImplementedError) as exc:
         parser.exit(1, f"{parser.prog}: {exc}\n")
+
+
+def oneline_main(argv=None):
+    parser = argparse.ArgumentParser(description="Print a Python one-liner for source code")
+    parser.add_argument("source", help="Python source code to transform")
+    parser.add_argument("--debug", action="store_true", help="Use descriptive generated names")
+    args = parser.parse_args(argv)
+    try:
+        result = code_to_oneliner(args.source, debug=args.debug)
+        compile(result, "<oneline>", "exec")
+    except (SyntaxError, NotImplementedError) as exc:
+        parser.exit(1, f"{parser.prog}: {exc}\n")
+    print(result)
 
 
 if __name__ == "__main__":
