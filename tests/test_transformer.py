@@ -41,12 +41,17 @@ class TransformerTests(unittest.TestCase):
     def test_break_skips_remaining_body_and_iterations(self):
         self.assert_equivalent('for number in range(5):\n if number == 2:\n  break\n print(number)\nelse:\n print("complete")\nprint("done")')
         self.assert_equivalent('number = 0\nwhile number < 5:\n number += 1\n if number == 2:\n  break\n print(number)\nprint("done")')
+        self.assert_equivalent('while True:\n break\nelse:\n print("complete")\nprint("done")')
         self.assert_equivalent('items = iter([0, 1, 2, 3])\nfor item in items:\n if item == 1:\n  break\nprint(next(items))')
         self.assert_equivalent('for outer in range(2):\n for inner in range(3):\n  if inner == 1:\n   break\n print(outer)')
         self.assert_equivalent('for number in range(6):\n match number:\n  case 2:\n   continue\n  case 4:\n   break\n print(number)\nelse:\n print("complete")')
 
     def test_function_defined_in_loop_has_own_control_flow(self):
         self.assert_equivalent('for number in range(2):\n def show():\n  print("inside")\n if number == 1:\n  continue\nshow()')
+
+    def test_while_condition_truthiness_and_evaluation_order(self):
+        self.assert_equivalent('value = []\nwhile value:\n print("body")\nelse:\n print("done")')
+        self.assert_equivalent("events = []\ndef condition():\n events.append('condition')\n return len(events) < 3\nwhile condition():\n events.append('body')\nprint(events)")
 
     def test_match_chooses_first_case_and_groups_or_patterns(self):
         self.assert_equivalent('commands = [["say", "hello"], ["print", "world"]]\nfor command in commands:\n match command:\n  case ["say" | "print", message]:\n   print(message)\n  case _:\n   print("fallback")')

@@ -163,12 +163,13 @@ def handle_while(node: ast.While, transform: TransformFunc, ctx: Context):
     if has_continue:
         result.append(f"({ctx.continue_var} := False), ")
 
-    result.append(f"{body_var} := (({body} and ")
+    condition_var = generate_name(prefix="__while_condition_")
+    result.append(f"{body_var} := (([{condition_var} := {test}, bool({condition_var}) and {body}")
 
     if has_break:
-        result.append(f"not {ctx.break_var} and ")
+        result.append(f" and not {ctx.break_var}")
 
-    result.append(f"{test}) for {inf_var} in iter(int, 1)), ")
+    result.append(f"][-1]) for {inf_var} in iter(int, 1)), ")
 
     result.append(f"[None for {test_var} in iter(lambda: next({body_var}), False)]")
 
